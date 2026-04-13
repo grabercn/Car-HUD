@@ -12,13 +12,59 @@ import time
 import json
 import glob
 import subprocess
+import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from socketserver import ThreadingMixIn
 from urllib.parse import unquote
 
 PORT = 8080
 SCREENSHOT_PATH = "/tmp/car-hud-screenshot.bmp"
 DASHCAM_DIR = "/home/chrismslist/northstar/dashcam"
-VIDEO_DEV = "/dev/video0"
+DASHCAM_STATUS = "/tmp/car-hud-dashcam-data"
+
+# Reference counting for active camera streams
+STREAM_COUNT = 0
+STREAM_LOCK = threading.Lock()
+
+def start_streaming_session():
+    global STREAM_COUNT
+    with STREAM_LOCK:
+        if STREAM_COUNT == 0:
+            subprocess.run(["sudo", "systemctl", "stop", "car-hud-dashcam"],
+                           capture_output=True, timeout=5)
+        STREAM_COUNT += 1
+
+def stop_streaming_session():
+    global STREAM_COUNT
+    with STREAM_LOCK:
+        STREAM_COUNT -= 1
+        if STREAM_COUNT <= 0:
+            STREAM_COUNT = 0
+            subprocess.run(["sudo", "systemctl", "start", "car-hud-dashcam"],
+                           capture_output=True, timeout=5)
+
+def find_cameras():
+    """Find all valid USB video capture devices."""
+    cams = []
+    try:
+        r = subprocess.run(["v4l2-ctl", "--list-devices"], 
+                           capture_output=True, text=True, timeout=5)
+        lines = r.stdout.split("\n")
+        current_bus = ""
+        for line in lines:
+            if ":" in line and not line.startswith("\t"):
+                current_bus = line.lower()
+            elif line.strip().startswith("/dev/video"):
+                dev = line.strip()
+                if "bcm2835" in current_bus or "unicam" in current_bus:
+                    continue
+                res = subprocess.run(["v4l2-ctl", "--device", dev, "--all"], 
+                                      capture_output=True, text=True, timeout=2)
+                if "Device Caps      : 0x04200001" in res.stdout:
+                    cams.append(dev)
+    except Exception:
+        pass
+    return sorted(list(set(cams)))
 
 
 def take_screenshot():
@@ -39,8 +85,8 @@ class Handler(BaseHTTPRequestHandler):
             self.serve_hud_stream()
         elif path == "/camera":
             self.serve_camera_page()
-        elif path == "/camera/stream":
-            self.serve_camera_stream()
+        elif path.startswith("/camera/stream/"):
+            self.serve_camera_stream(path)
         elif path == "/dashcam":
             self.serve_dashcam_page()
         elif path.startswith("/dashcam/video/"):
@@ -74,7 +120,7 @@ nav a:hover{color:#fff}
 </style></head><body>
 <nav>
 <a href="/">HUD</a>
-<a href="/camera">Camera</a>
+<a href="/camera">Cameras</a>
 <a href="/dashcam">Recordings</a>
 </nav>
 <div class="view" style="padding-top:24px"><img id="hud" src="/stream"></div>
@@ -93,28 +139,48 @@ document.addEventListener('keydown',(e)=>{
         self.send_response(200)
         self.send_header("Content-Type", "text/html")
         self.end_headers()
-        self.wfile.write(b"""<!DOCTYPE html>
-<html><head><title>Car-HUD Camera</title>
+        
+        # Check how many cameras we have
+        cam_count = 1
+        try:
+            with open(DASHCAM_STATUS) as f:
+                status = json.load(f)
+                cam_count = status.get("cam_count", 1)
+        except Exception:
+            cam_count = len(find_cameras()) or 1
+
+        cam_html = ""
+        for i in range(cam_count):
+            cam_html += f"""
+            <div class="cam-box">
+                <div class="cam-label">Camera {i}</div>
+                <img src="/camera/stream/{i}">
+            </div>"""
+
+        html = f"""<!DOCTYPE html>
+<html><head><title>Car-HUD Cameras</title>
 <meta name="viewport" content="width=device-width">
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{background:#000;color:#fff;font-family:monospace}
-.view{width:100vw;height:100vh;display:flex;justify-content:center;align-items:center}
-img{width:100%;height:100%;object-fit:contain}
-nav{position:fixed;top:0;left:0;width:100%;background:rgba(0,0,0,0.8);padding:6px 12px;display:flex;gap:16px;z-index:10;font-size:12px}
-nav a{color:#0af;text-decoration:none}
-nav a:hover{color:#fff}
-.rec{position:fixed;top:30px;left:12px;color:red;font-size:14px;animation:blink 1s infinite}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{background:#000;color:#fff;font-family:monospace}}
+.view{{width:100vw;min-height:100vh;display:flex;flex-wrap:wrap;justify-content:center;align-items:center;padding-top:40px;gap:10px}}
+.cam-box{{position:relative;flex:1;min-width:320px;max-width:640px}}
+img{{width:100%;height:auto;display:block;border:1px solid #222}}
+.cam-label{{position:absolute;top:5px;left:5px;background:rgba(0,0,0,0.6);padding:2px 6px;font-size:12px;color:#0af}}
+nav{{position:fixed;top:0;left:0;width:100%;background:rgba(0,0,0,0.8);padding:6px 12px;display:flex;gap:16px;z-index:10;font-size:12px}}
+nav a{{color:#0af;text-decoration:none}}
+.rec{{position:fixed;top:30px;left:12px;color:red;font-size:14px;animation:blink 1s infinite;z-index:11}}
+@keyframes blink{{0%,100%{{opacity:1}}50%{{opacity:0}}}}
 </style></head><body>
 <nav>
 <a href="/">HUD</a>
-<a href="/camera">Camera</a>
+<a href="/camera">Cameras</a>
 <a href="/dashcam">Recordings</a>
 </nav>
 <div class="rec">&#9679; LIVE</div>
-<div class="view"><img src="/camera/stream"></div>
-</body></html>""")
+<div class="view">{cam_html}</div>
+</body></html>"""
+        self.wfile.write(html.encode())
 
     def serve_dashcam_page(self):
         self.send_response(200)
@@ -128,16 +194,22 @@ nav a:hover{color:#fff}
             name = os.path.basename(f)
             size = os.path.getsize(f)
             total_mb += size / (1024*1024)
-            # Parse timestamp from filename: chunk_YYYYMMDD_HHMMSS.mp4
-            ts = name.replace("chunk_", "").replace(".mp4", "")
+            # Parse: chunk_YYYYMMDD_HHMMSS_camX.mp4
+            cam_id = "0"
+            if "_cam" in name:
+                cam_id = name.split("_cam")[1].split(".")[0]
+            
+            ts_part = name.replace("chunk_", "").split("_cam")[0]
             try:
-                date = f"{ts[:4]}-{ts[4:6]}-{ts[6:8]}"
-                t = f"{ts[9:11]}:{ts[11:13]}:{ts[13:15]}"
+                date = f"{ts_part[:4]}-{ts_part[4:6]}-{ts_part[6:8]}"
+                t = f"{ts_part[9:11]}:{ts_part[11:13]}:{ts_part[13:15]}"
                 display = f"{date} {t}"
             except Exception:
                 display = name
+                
             size_mb = size / (1024*1024)
-            rows += f'<tr><td>{display}</td><td>{size_mb:.1f} MB</td>'
+            cam_label = f'<span style="color:{"#0af" if cam_id=="0" else "#f0a"}">Cam {cam_id}</span>'
+            rows += f'<tr><td>{display}</td><td>{cam_label}</td><td>{size_mb:.1f} MB</td>'
             rows += f'<td><a href="/dashcam/video/{name}">Play</a> | '
             rows += f'<a href="/dashcam/video/{name}" download>Download</a></td></tr>'
 
@@ -158,13 +230,13 @@ a{{color:#0af}}
 </style></head><body>
 <nav>
 <a href="/">HUD</a>
-<a href="/camera">Camera</a>
+<a href="/camera">Cameras</a>
 <a href="/dashcam">Recordings</a>
 </nav>
 <h2>Dashcam Recordings</h2>
-<div class="stats">{len(files)} clips | {total_mb:.0f} MB total | 2GB max</div>
+<div class="stats">{len(files)} clips | {total_mb:.0f} MB total</div>
 <table>
-<tr><th>Date/Time</th><th>Size</th><th>Actions</th></tr>
+<tr><th>Date/Time</th><th>Camera</th><th>Size</th><th>Actions</th></tr>
 {rows}
 </table>
 </body></html>"""
@@ -214,23 +286,36 @@ a{{color:#0af}}
         except (BrokenPipeError, ConnectionResetError):
             pass
 
-    def serve_camera_stream(self):
+    def serve_camera_stream(self, path):
         """Live MJPEG stream from webcam via ffmpeg."""
+        cam_idx = 0
+        try:
+            cam_idx = int(path.split("/camera/stream/")[1])
+        except Exception:
+            pass
+
+        cams = find_cameras()
+        if cam_idx >= len(cams):
+            self.send_response(404)
+            self.end_headers()
+            return
+        
+        video_dev = cams[cam_idx]
+
         self.send_response(200)
         self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
 
-        # Need to stop dashcam briefly to access camera
-        subprocess.run(["sudo", "systemctl", "stop", "car-hud-dashcam"],
-                       capture_output=True, timeout=5)
-        subprocess.run(["pkill", "-f", "ffmpeg.*video0"], capture_output=True, timeout=3)
+        start_streaming_session()
+        # Kill any existing ffmpeg processes for THIS device
+        subprocess.run(["pkill", "-f", f"ffmpeg.*{video_dev}"], capture_output=True, timeout=3)
         time.sleep(0.5)
 
         try:
             proc = subprocess.Popen([
                 "ffmpeg", "-f", "v4l2", "-video_size", "640x480",
-                "-framerate", "10", "-i", VIDEO_DEV,
+                "-framerate", "10", "-i", video_dev,
                 "-f", "mjpeg", "-q:v", "5", "-"
             ], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
 
@@ -240,7 +325,6 @@ a{{color:#0af}}
                 if not chunk:
                     break
                 buf += chunk
-                # Find JPEG frames (start with FFD8, end with FFD9)
                 while True:
                     start = buf.find(b"\xff\xd8")
                     end = buf.find(b"\xff\xd9", start + 2)
@@ -261,8 +345,7 @@ a{{color:#0af}}
                 proc.kill()
             except Exception:
                 pass
-            subprocess.run(["sudo", "systemctl", "start", "car-hud-dashcam"],
-                           capture_output=True, timeout=5)
+            stop_streaming_session()
 
     def serve_screenshot(self):
         take_screenshot()
@@ -333,9 +416,13 @@ a{{color:#0af}}
         pass
 
 
+class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
+    pass
+
+
 def main():
-    server = HTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Car-HUD Web on port {PORT}")
+    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+    print(f"Car-HUD Web on port {PORT} (Multi-threaded)")
     server.serve_forever()
 
 

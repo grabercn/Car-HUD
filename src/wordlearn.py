@@ -13,7 +13,7 @@ import os
 import time
 
 LEARN_FILE = "/home/chrismslist/northstar/.word_corrections.json"
-MAX_ENTRIES = 500
+MAX_ENTRIES = 1000
 
 
 def _load():
@@ -21,20 +21,17 @@ def _load():
         with open(LEARN_FILE) as f:
             return json.load(f)
     except Exception:
-        return {"words": {}, "phrases": {}}
+        return {"words": {}, "phrases": {}, "wake": {}}
 
 
 def _save(data):
     try:
         # Trim if too large — keep most-used entries
-        if len(data["words"]) > MAX_ENTRIES:
-            sorted_w = sorted(data["words"].items(),
-                              key=lambda x: -x[1].get("hits", 0))
-            data["words"] = dict(sorted_w[:MAX_ENTRIES])
-        if len(data["phrases"]) > MAX_ENTRIES:
-            sorted_p = sorted(data["phrases"].items(),
-                              key=lambda x: -x[1].get("hits", 0))
-            data["phrases"] = dict(sorted_p[:MAX_ENTRIES])
+        for category in ["words", "phrases", "wake"]:
+            if len(data.get(category, {})) > MAX_ENTRIES:
+                sorted_items = sorted(data[category].items(),
+                                  key=lambda x: -x[1].get("hits", 0))
+                data[category] = dict(sorted_items[:MAX_ENTRIES])
         with open(LEARN_FILE, "w") as f:
             json.dump(data, f)
     except Exception:
@@ -42,96 +39,82 @@ def _save(data):
 
 
 def learn(vosk_text, actual_action, actual_target):
-    """Learn from a successful Gemini interpretation.
-    Maps misheard words to what they should have been.
-    """
+    """Learn from a successful Gemini interpretation."""
     data = _load()
     vosk_words = vosk_text.lower().split()
-
-    # Learn word-level corrections
-    # If the target word isn't in what Vosk heard, find the closest misheard word
     target_lower = actual_target.lower()
+
+    # 1. Word-level: map garbled word to intended target
     if target_lower and target_lower not in vosk_words:
-        # Find the word Vosk likely garbled
-        # Heuristic: the word closest in position to where the target should be
-        # (usually near the end of the sentence)
+        # Find the word that's likely the garbled target (usually near end)
         for word in reversed(vosk_words):
-            # Skip common words
-            if word in ("the", "a", "to", "my", "is", "it", "hey", "honda",
-                        "can", "you", "what", "change", "show", "make",
-                        "set", "turn", "do", "i", "please"):
+            if word in ("the", "a", "to", "my", "is", "it", "hey", "honda", "can", "you", "show", "make", "set"):
                 continue
-            # This word was probably the garbled version of the target
-            key = word
-            if key not in data["words"]:
-                data["words"][key] = {"corrections": {}, "hits": 0}
-            corrections = data["words"][key]["corrections"]
-            corrections[target_lower] = corrections.get(target_lower, 0) + 1
-            data["words"][key]["hits"] += 1
+            if word not in data["words"]:
+                data["words"][word] = {"corrections": {}, "hits": 0}
+            data["words"][word]["corrections"][target_lower] = data["words"][word]["corrections"].get(target_lower, 0) + 1
+            data["words"][word]["hits"] += 1
             break
 
-    # Learn phrase-level patterns
-    # Map short phrases to actions
-    # Remove wake words and common filler
-    clean = []
-    skip = {"hey", "honda", "hondo", "a", "the", "please", "can", "you",
-            "could", "would", "i", "want", "to", "me", "my", "do"}
-    for w in vosk_words:
-        if w not in skip:
-            clean.append(w)
+    # 2. Phrase-level: map whole cleaned phrase to intent
+    clean = [w for w in vosk_words if w not in {"hey", "honda", "hondo", "a", "the", "please", "can", "you", "to"}]
     if clean:
-        phrase_key = " ".join(clean[:4])  # first 4 meaningful words
+        phrase_key = " ".join(clean[:4])
         if phrase_key not in data["phrases"]:
-            data["phrases"][phrase_key] = {"corrections": {}, "hits": 0}
-        action_key = f"{actual_action}:{actual_target}"
-        pc = data["phrases"][phrase_key]["corrections"]
-        pc[action_key] = pc.get(action_key, 0) + 1
+            data["phrases"][phrase_key] = {"intent": f"{actual_action}:{actual_target}", "hits": 0}
         data["phrases"][phrase_key]["hits"] += 1
 
     _save(data)
 
 
-def correct(text):
-    """Apply learned corrections to Vosk text.
-    Returns corrected text and confidence (0-1).
-    """
+def learn_wake(garbled_wake):
+    """Learn words that Vosk consistently hears when we said 'Hey Honda'."""
     data = _load()
-    if not data["words"] and not data["phrases"]:
-        return text, 0.0, None
+    if "wake" not in data: data["wake"] = {}
+    
+    words = garbled_wake.lower().split()
+    for w in words:
+        if w in ("honda", "hondo"): continue
+        if w not in data["wake"]:
+            data["wake"][w] = {"hits": 0}
+        data["wake"][w]["hits"] += 1
+    _save(data)
 
+
+def correct(text):
+    """Apply learned corrections. Returns (corrected_text, confidence, phrase_intent)."""
+    data = _load()
     words = text.lower().split()
     corrected = list(words)
     corrections_made = 0
 
-    # Word-level corrections
+    # Apply word mappings
     for i, word in enumerate(words):
         if word in data["words"]:
             entry = data["words"][word]
-            if entry["corrections"] and entry["hits"] >= 2:
-                # Pick the most common correction
-                best = max(entry["corrections"].items(), key=lambda x: x[1])
-                if best[1] >= 2:  # need at least 2 confirmations
-                    corrected[i] = best[0]
+            if entry["corrections"]:
+                best_corr, count = max(entry["corrections"].items(), key=lambda x: x[1])
+                if count >= 2:
+                    corrected[i] = best_corr
                     corrections_made += 1
 
-    corrected_text = " ".join(corrected)
-
-    # Phrase-level: check if we've seen this pattern before
-    clean = [w for w in words if w not in
-             {"hey", "honda", "hondo", "a", "the", "please", "can", "you",
-              "could", "would", "i", "want", "to", "me", "my", "do"}]
+    # Check phrase mappings
+    clean = [w for w in words if w not in {"hey", "honda", "hondo", "a", "the", "please", "can", "you", "to"}]
     phrase_key = " ".join(clean[:4])
-
-    phrase_action = None
+    phrase_intent = None
     if phrase_key in data["phrases"]:
-        entry = data["phrases"][phrase_key]
-        if entry["corrections"] and entry["hits"] >= 2:
-            best = max(entry["corrections"].items(), key=lambda x: x[1])
-            if best[1] >= 2:
-                phrase_action = best[0]  # "action:target"
+        if data["phrases"][phrase_key]["hits"] >= 2:
+            phrase_intent = data["phrases"][phrase_key]["intent"]
 
-    confidence = min(1.0, corrections_made * 0.3)
-    return corrected_text, confidence, phrase_action
+    # Check learned wake words
+    is_learned_wake = False
+    for w in words:
+        if w in data.get("wake", {}) and data["wake"][w]["hits"] >= 3:
+            is_learned_wake = True
+            break
+
+    confidence = min(1.0, corrections_made * 0.4 + (0.5 if phrase_intent else 0))
+    return " ".join(corrected), confidence, phrase_intent, is_learned_wake
 
 
 def get_stats():

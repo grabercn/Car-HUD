@@ -198,6 +198,7 @@ class CarHUD:
         self.voice_status = ""
         self.terminal_lines = ["Car-HUD Terminal [ESC close]", "$ "]
         self.show_camera = False
+        self.camera_idx = 0
         self.camera_frame = None
         self.camera_cap = None
 
@@ -354,8 +355,22 @@ class CarHUD:
         except Exception:
             pass
 
+    def draw_glow_text(self, text, font, color, pos, glow_color=None, glow_dist=1):
+        """Draw text with a subtle glow/shadow for better readability."""
+        if glow_color is None:
+            glow_color = (0, 0, 0, 150)
+        
+        # Draw shadow/glow offset
+        st = font.render(text, True, glow_color)
+        for dx, dy in [(-glow_dist, 0), (glow_dist, 0), (0, -glow_dist), (0, glow_dist)]:
+            self.surf.blit(st, (pos[0] + dx, pos[1] + dy))
+        
+        # Main text
+        mt = font.render(text, True, color)
+        self.surf.blit(mt, pos)
+
     def draw_arc_gauge(self, cx, cy, radius, thickness, pct, color, bg_color=None, 
-                       start=math.pi, end=0):
+                       start=math.pi, end=0, ticks=False):
         s = self.surf
         bg = bg_color or self.t["border"]
         start_angle = start
@@ -390,6 +405,17 @@ class CarHUD:
             x2 = cx + radius * math.cos(a2)
             y2 = cy - radius * math.sin(a2)
             pygame.draw.line(s, c, (int(x1), int(y1)), (int(x2), int(y2)), thickness)
+
+        if ticks:
+            # Draw scale ticks every 10%
+            tick_len = thickness + 3
+            for i in range(11):
+                a = start_angle + (end_angle - start_angle) * (i / 10)
+                x1 = cx + (radius - thickness//2) * math.cos(a)
+                y1 = cy - (radius - thickness//2) * math.sin(a)
+                x2 = cx + (radius + thickness//2 + 3) * math.cos(a)
+                y2 = cy - (radius + thickness//2 + 3) * math.sin(a)
+                pygame.draw.line(s, self.t["border_lite"], (int(x1), int(y1)), (int(x2), int(y2)), 1)
 
     def draw_hbar(self, x, y, w, h, pct, color, label=None, value=None):
         s = self.surf
@@ -439,90 +465,91 @@ class CarHUD:
 
         # ── Central Cluster: Speedo ──
         # Large central arc (stock style)
-        cx, cy = W // 2, 175
-        r_speed = 135
+        cx, cy = W // 2, 168
+        r_speed = 130
         sp_pct = min(speed / 140, 1.0)
-        # Main speed arc - from 5 o'clock to 7 o'clock (ish) — actually pi+0.5 to -0.5
-        # For top-half plus side extensions: 1.1*pi to -0.1*pi
-        self.draw_arc_gauge(cx, cy, r_speed, 12, sp_pct, t["primary"], 
-                             start=math.pi*1.15, end=-math.pi*0.15)
+        # Main speed arc - from 1.15*pi to -0.15*pi
+        self.draw_arc_gauge(cx, cy, r_speed, 14, sp_pct, t["primary"], 
+                             start=math.pi*1.15, end=-math.pi*0.15, ticks=True)
         
         # RPM as thin inner ring
         rpm_pct = min(rpm / 7000, 1.0)
         rc = t["primary_dim"] if rpm < 3000 else AMBER if rpm < 5500 else RED
-        self.draw_arc_gauge(cx, cy, r_speed - 15, 3, rpm_pct, rc,
+        self.draw_arc_gauge(cx, cy, r_speed - 18, 4, rpm_pct, rc,
                              start=math.pi*1.15, end=-math.pi*0.15)
 
-        # Speed Digits
-        sp_txt = self.font_xxl.render(f"{int(speed)}", True, t["text_bright"])
-        s.blit(sp_txt, (cx - sp_txt.get_width()//2, cy - 65))
-        s.blit(self.font_md.render("MPH", True, t["text_dim"]), (cx - 18, cy - 2))
+        # Speed Digits - using draw_glow_text for depth
+        sp_str = f"{int(speed)}"
+        sp_pos = (cx - self.font_xxl.size(sp_str)[0]//2, cy - 65)
+        self.draw_glow_text(sp_str, self.font_xxl, t["text_bright"], sp_pos)
+        
+        unit_str = "MPH"
+        unit_pos = (cx - self.font_md.size(unit_str)[0]//2, cy - 2)
+        self.draw_glow_text(unit_str, self.font_md, t["text_dim"], unit_pos)
 
         # EV/GAS status badge (below speed)
         mc = GREEN if ev else t["primary"]
-        badge_w, badge_h = 50, 20
-        pygame.draw.rect(s, mc, (cx - badge_w//2, cy + 25, badge_w, badge_h), border_radius=4)
+        badge_w, badge_h = 56, 22
+        pygame.draw.rect(s, (0, 0, 0, 100), (cx - badge_w//2 - 1, cy + 28, badge_w + 2, badge_h + 2), border_radius=4)
+        pygame.draw.rect(s, mc, (cx - badge_w//2, cy + 29, badge_w, badge_h), border_radius=4)
         ml = self.font_sm.render("EV" if ev else "GAS", True, (0, 0, 0))
-        s.blit(ml, (cx - ml.get_width()//2, cy + 25 + (badge_h - ml.get_height())//2))
+        s.blit(ml, (cx - ml.get_width()//2, cy + 29 + (badge_h - ml.get_height())//2))
 
-        # ── Left Cluster: CHG/PWR (Charge/Power) ──
-        # Half-circle on the left
-        lx, ly = 75, 175
-        lr = 85
+        # ── Left Cluster: CHG/PWR ──
+        lx, ly = 70, 168
+        lr = 80
         if ev:
             # Only Power when EV
             pwr_pct = min(throttle / 80, 1.0)
-            self.draw_arc_gauge(lx, ly, lr, 8, pwr_pct, GREEN, 
-                                 start=math.pi*1.3, end=math.pi*0.7)
+            self.draw_arc_gauge(lx, ly, lr, 10, pwr_pct, GREEN, 
+                                 start=math.pi*1.3, end=math.pi*0.7, ticks=True)
         else:
             # Hybrid mode: show Load and CHG
             load_pct = min(load / 100, 1.0)
             pc = t["primary"] if load_pct < 0.7 else AMBER if load_pct < 0.9 else RED
-            self.draw_arc_gauge(lx, ly, lr, 8, load_pct, pc, 
-                                 start=math.pi, end=math.pi*0.7)
+            self.draw_arc_gauge(lx, ly, lr, 10, load_pct, pc, 
+                                 start=math.pi, end=math.pi*0.7, ticks=True)
             # CHG (below 9 o'clock)
             chg_pct = 0.3 if (throttle < 5 and rpm > 800) else 0.0
-            self.draw_arc_gauge(lx, ly, lr, 8, chg_pct, GREEN, 
+            self.draw_arc_gauge(lx, ly, lr, 10, chg_pct, GREEN, 
                                  start=math.pi, end=math.pi*1.3)
         
-        s.blit(self.font_xs.render("PWR", True, t["text_dim"]), (lx - 20, ly - lr - 10))
-        s.blit(self.font_xs.render("CHG", True, GREEN), (lx - 20, ly + lr + 2))
+        self.draw_glow_text("PWR", self.font_xs, t["text_dim"], (lx - 12, ly - lr - 14))
+        self.draw_glow_text("CHG", self.font_xs, GREEN, (lx - 12, ly + lr + 4))
 
         # ── Right Cluster: Fuel & Battery ──
-        # Nested arcs on the right
-        rx, ry = W - 75, 175
-        rr = 85
+        rx, ry = W - 70, 168
+        rr = 80
         # Fuel Outer
         fc = GREEN if fuel > 20 else AMBER if fuel > 10 else RED
-        self.draw_arc_gauge(rx, ry, rr, 8, fuel/100, fc,
-                             start=math.pi*0.3, end=-math.pi*0.3)
+        self.draw_arc_gauge(rx, ry, rr, 10, fuel/100, fc,
+                             start=math.pi*0.3, end=-math.pi*0.3, ticks=True)
         # HV Battery Inner
         bc = GREEN if hv > 30 else AMBER if hv > 15 else RED
-        self.draw_arc_gauge(rx, ry, rr - 15, 6, hv/100, bc,
+        self.draw_arc_gauge(rx, ry, rr - 18, 6, hv/100, bc,
                              start=math.pi*0.3, end=-math.pi*0.3)
 
-        s.blit(self.font_xs.render("FUEL", True, t["text_dim"]), (rx - 15, ry - rr - 10))
-        s.blit(self.font_xs.render("BATT", True, t["text_dim"]), (rx - 15, ry + rr + 2))
+        self.draw_glow_text("FUEL", self.font_xs, t["text_dim"], (rx - 15, ry - rr - 14))
+        self.draw_glow_text("BATT", self.font_xs, t["text_dim"], (rx - 15, ry + rr + 4))
 
         # ── Top strip info ──
-        ty = 4 + wy
-        s.blit(self.font_md.render(now.strftime("%I:%M"), True, t["text_bright"]), (12, ty))
-        vl = self.font_md.render(f"{volts:.1f}V", True, t["text_med"])
-        s.blit(vl, (W - vl.get_width() - 12, ty))
+        ty = 6 + wy
+        self.draw_glow_text(now.strftime("%I:%M"), self.font_md, t["text_bright"], (12, ty))
+        vl_str = f"{volts:.1f}V"
+        self.draw_glow_text(vl_str, self.font_md, t["text_med"], (W - self.font_md.size(vl_str)[0] - 12, ty))
 
         # ── Lower Data (between clusters) ──
         # Ambient/Intake temp
-        at_t = self.font_xs.render(f"Air:{intake:.0f}C", True, t["text_dim"])
-        s.blit(at_t, (cx + 50, cy + 55))
+        self.draw_glow_text(f"AIR {intake:.0f}C", self.font_xs, t["text_dim"], (cx + 55, cy + 55))
         # Coolant
-        ct_t = self.font_xs.render(f"H2O:{cool:.0f}C", True, t["text_med"])
-        s.blit(ct_t, (cx - 50 - ct_t.get_width(), cy + 55))
+        self.draw_glow_text(f"H2O {cool:.0f}C", self.font_xs, t["text_med"], (cx - 55 - self.font_xs.size(f"H2O {cool:.0f}C")[0], cy + 55))
 
         # Range
         fuel_mi = int(fuel / 100 * 12.8 * 40)
         ev_mi = int(hv / 100 * 15)
-        rt = self.font_sm.render(f"Range: {fuel_mi + ev_mi}mi", True, t["text_bright"])
-        s.blit(rt, ((W - rt.get_width())//2, H - 54))
+        range_str = f"EST RANGE: {fuel_mi + ev_mi} MI"
+        range_pos = ((W - self.font_sm.size(range_str)[0])//2, H - 54)
+        self.draw_glow_text(range_str, self.font_sm, t["text_bright"], range_pos)
 
         ly = H - 36
         pygame.draw.line(s, t["border_lite"], (20, ly), (W - 20, ly))
@@ -539,35 +566,34 @@ class CarHUD:
         # Time (bigger)
         time_str = now.strftime("%I:%M")
         ampm = now.strftime("%p")
-        ts = self.font_xl.render(time_str, True, t["primary"])
-        ap = self.font_md.render(ampm, True, t["accent"])
-        tx = (W - ts.get_width() - ap.get_width() - 6) // 2
-        s.blit(ts, (tx, 8))
-        s.blit(ap, (tx + ts.get_width() + 6,
-                    8 + ts.get_height() - ap.get_height() - 2))
+        
+        tx_full_w = self.font_xl.size(time_str)[0] + self.font_md.size(ampm)[0] + 6
+        tx = (W - tx_full_w) // 2
+        self.draw_glow_text(time_str, self.font_xl, t["primary"], (tx, 8))
+        self.draw_glow_text(ampm, self.font_md, t["accent"], (tx + self.font_xl.size(time_str)[0] + 6, 26))
 
-        ds = self.font_sm.render(now.strftime("%A, %B %d"), True, t["text_med"])
-        s.blit(ds, ((W - ds.get_width()) // 2, 8 + ts.get_height() + 2))
+        date_str = now.strftime("%A, %B %d").upper()
+        self.draw_glow_text(date_str, self.font_sm, t["text_med"], ((W - self.font_sm.size(date_str)[0]) // 2, 48))
 
-        dy = 8 + ts.get_height() + ds.get_height() + 8
-        pygame.draw.line(s, t["primary_dim"], (4, dy), (W - 4, dy))
+        dy = 72
+        pygame.draw.line(s, t["border_lite"], (10, dy), (W - 10, dy))
 
         # System bars
-        ry = dy + 8
-        hw = W // 2 - 14
-        pad = 6
+        ry = dy + 12
+        hw = W // 2 - 24
+        pad = 12
 
         temp = stats.get("cpu_temp", 0)
         tc = t["primary"] if temp < 60 else AMBER if temp < 75 else RED
-        self.draw_hbar(pad, ry + 16, hw, 7, temp/85, tc, "CPU", f"{temp:.0f}C")
+        self.draw_hbar(pad, ry + 16, hw, 10, temp/85, tc, "CPU", f"{temp:.0f}°C")
 
         mp = stats.get("mem_used_pct", 0)
         mc = t["primary"] if mp < 70 else AMBER if mp < 85 else RED
-        self.draw_hbar(W//2 + pad, ry + 16, hw, 7, mp/100, mc, "MEM", f"{mp}%")
+        self.draw_hbar(W//2 + pad, ry + 16, hw, 10, mp/100, mc, "MEM", f"{mp}%")
 
         # Lower: Honda logo or music
-        ly = ry + 40
-        pygame.draw.line(s, t["border_lite"], (4, ly), (W - 4, ly))
+        ly = ry + 44
+        pygame.draw.line(s, t["border_lite"], (10, ly), (W - 10, ly))
 
         if music.get("playing"):
             self.draw_lower_section(ly + 3, music, None)
@@ -601,47 +627,48 @@ class CarHUD:
             
             # Music icon / Status
             color = t["primary"] if music.get("playing") else t["text_dim"]
-            pygame.draw.circle(s, color, (15, y + 14), 4)
-            pygame.draw.line(s, color, (19, y + 14), (19, y + 4), 2)
+            # Draw a mini "Note" icon
+            pygame.draw.circle(s, color, (15, y + 12), 3)
+            pygame.draw.line(s, color, (18, y + 12), (18, y + 4), 2)
+            pygame.draw.line(s, color, (18, y + 4), (22, y + 6), 2)
             
             if music.get("playing"):
                 # Track + Artist
                 max_c = W // 10
-                tt = self.font_sm.render(track[:max_c], True, t["text_bright"])
+                self.draw_glow_text(track[:max_c], self.font_md, t["text_bright"], (28, y - 1))
                 at_str = f"{artist}" + (f" - {album}" if album and album != "Unknown" else "")
-                at = self.font_xs.render(at_str[:max_c+5], True, t["text_med"])
-                s.blit(tt, (28, y + 2))
-                s.blit(at, (28, y + 3 + tt.get_height()))
+                self.draw_glow_text(at_str[:max_c+8], self.font_xs, t["text_med"], (28, y + 14))
 
                 prog = music.get("progress", 0)
                 dur = music.get("duration", 0)
                 if dur > 0:
-                    pbar_y = y + 4 + tt.get_height() + at.get_height() + 3
-                    pygame.draw.rect(s, t["border"], (10, pbar_y, W-20, 3), border_radius=1)
+                    pbar_y = y + 26
+                    pygame.draw.rect(s, t["border"], (10, pbar_y, W-20, 2), border_radius=1)
                     fw = int((W-20) * min(prog/dur, 1))
                     if fw > 0:
-                        pygame.draw.rect(s, t["primary"], (10, pbar_y, fw, 3), border_radius=1)
+                        pygame.draw.rect(s, t["primary"], (10, pbar_y, fw, 2), border_radius=1)
             else:
                 # Idle state: show connected phone
-                st = self.font_sm.render(f"Bluetooth: {phone}", True, t["text_dim"])
-                s.blit(st, (28, y + 8))
+                self.draw_glow_text(f"CONNECTED: {phone}", self.font_sm, t["text_dim"], (28, y + 5))
         elif vd:
-            ts = self.font_md.render(now.strftime("%I:%M %p"), True, t["text_med"])
-            s.blit(ts, (8, y + 4))
+            # Default view: Time and Temp
+            self.draw_glow_text(now.strftime("%I:%M %p"), self.font_md, t["text_med"], (10, y + 2))
             amb = vd.get("AMBIANT_AIR_TEMP")
             if amb:
-                at = self.font_md.render(f"{amb:.0f}C", True, t["text_dim"])
-                s.blit(at, (W - at.get_width() - 8, y + 4))
+                temp_str = f"{amb:.0f}°C"
+                self.draw_glow_text(temp_str, self.font_md, t["text_dim"], (W - self.font_md.size(temp_str)[0] - 10, y + 2))
 
     def draw_status_strip(self, obd):
         W, H = self.width, self.height
         s = self.surf
         t = self.t
-        sy = H - 26
+        sy = H - 28
 
+        # Strip background
+        pygame.draw.rect(s, (0, 0, 0, 80), (0, sy, W, 28))
         pygame.draw.line(s, t["border_lite"], (0, sy), (W, sy))
 
-        # Audio detection — check for USB audio device (input+output)
+        # Audio detection
         ac = t["text_dim"]
         has_in = False
         has_out = False
@@ -658,10 +685,6 @@ class CarHUD:
                             has_out = True
                 except Exception:
                     pass
-        if has_in and has_out:
-            ac = t["primary"]  # theme color when fully active
-        elif has_in or has_out:
-            ac = AMBER
 
         # OBD
         if obd["connected"] and obd.get("data"):
@@ -692,26 +715,24 @@ class CarHUD:
         except Exception:
             pass
 
-        # AUD: combine hardware + voice service status
-        # Green = hardware + service running, Amber = hardware only (service starting), Dim = nothing
+        # AUD (Mic)
         voice_running = False
         try:
             with open("/tmp/car-hud-mic-level") as f:
                 lvl_age = time.time() - os.path.getmtime("/tmp/car-hud-mic-level")
-                voice_running = lvl_age < 15  # generous — Gemini calls take a few seconds
+                voice_running = lvl_age < 15
         except Exception:
             pass
 
         if has_in and voice_running:
-            ac = t["primary"]  # fully active
+            ac = t["primary"]
         elif has_in:
-            ac = AMBER  # hardware present but service not ready
+            ac = AMBER
         elif has_out:
             ac = AMBER
 
-        # CAM status — recording=red pulse, service running=primary, off=dim
+        # CAM
         cam_c = t["text_dim"]
-        cam_recording = False
         cam_count = 0
         try:
             with open("/tmp/car-hud-dashcam-data") as f:
@@ -719,45 +740,44 @@ class CarHUD:
                 if time.time() - cd.get("timestamp", 0) < 60:
                     cam_count = cd.get("cam_count", 0)
                     if cd.get("recording"):
-                        cam_recording = True
-                        cam_c = RED
+                        cam_c = RED if int(time.time() * 2) % 2 == 0 else (120, 0, 0) # Blinking
                     else:
                         cam_c = t["primary"] if cam_count > 0 else t["text_dim"]
         except Exception:
             pass
-        # Also check if camera device exists if service status is old/missing
         if cam_count == 0 and os.path.exists("/dev/video0"):
             cam_count = 1
             if cam_c == t["text_dim"]: cam_c = AMBER
 
         modules = [("AUD", ac), ("OBD", oc), ("MUS", mc),
-                   ("NET", nc), ("CAM", cam_c), ("LUX", t["text_dim"])]
-        mw = (W - 12) // len(modules)
-        my = sy + 3
+                   ("NET", nc), ("CAM", cam_c), ("CPU", t["primary"])]
+        mw = W // len(modules)
+        my = sy + 4
 
-        net_idx = -1
         for i, (name, color) in enumerate(modules):
-            mx = 6 + i * mw
-            # CAM special drawing: half circle for 1 cam, full for 2+
-            if name == "CAM" and cam_count == 1:
-                # Draw half-filled circle (top half)
-                pygame.draw.arc(s, color, (mx + mw // 2 - 3, my, 6, 6), 0, math.pi, 3)
+            mx = i * mw
+
+            # Icon
+            if name == "CAM":
+                if cam_count == 1:
+                    pygame.draw.arc(s, color, (mx + mw // 2 - 4, my, 8, 8), 0, math.pi, 2)
+                elif cam_count >= 2:
+                    pygame.draw.circle(s, color, (mx + mw // 2, my + 4), 3)
+                else:
+                    pygame.draw.circle(s, color, (mx + mw // 2, my + 4), 3, 1)
             else:
-                pygame.draw.circle(s, color, (mx + mw // 2, my + 3), 3)
-            
+                pygame.draw.circle(s, color, (mx + mw // 2, my + 4), 3)
+
+            # Label
             mt = self.font_xs.render(name, True, color)
-            s.blit(mt, (mx + (mw - mt.get_width()) // 2, my + 9))
-            if name == "NET":
-                net_idx = i
+            s.blit(mt, (mx + (mw - mt.get_width()) // 2, my + 10))
 
-        # Show current SSID above NET indicator
-        if net_ssid and net_idx >= 0:
-            ssid_short = net_ssid[:8]
-            st = self.font_xs.render(ssid_short, True, nc)
-            nx = 6 + net_idx * mw + (mw - st.get_width()) // 2
-            s.blit(st, (nx, sy - st.get_height() - 1))
+            if name == "NET" and net_ssid:
+                st = self.font_xs.render(net_ssid[:10].upper(), True, color)
+                s.blit(st, (mx + (mw - st.get_width()) // 2, my - 12))
 
-        # Split mic bar: left half = USB mic, right half = webcam mic
+        # Split mic bar
+: left half = USB mic, right half = webcam mic
         self._read_voice_signal()
         aud_x = 6 + 0 * mw + 2
         mic_w = mw - 4
@@ -998,91 +1018,83 @@ class CarHUD:
 
         status = cal.get("status", "")
         if status == "done":
-            # Show results for 10 seconds
+            # Show results for a few seconds
             s.fill(t["bg"])
             pygame.draw.line(s, GREEN, (0, 0), (W, 0), 2)
-            done = self.font_lg.render("Calibration Complete", True, GREEN)
-            s.blit(done, ((W - done.get_width()) // 2, H // 2 - 30))
-            detail = self.font_sm.render(cal.get("detail", ""), True, t["text_bright"])
-            s.blit(detail, ((W - detail.get_width()) // 2, H // 2 + 10))
+            self.draw_glow_text("CALIBRATION COMPLETE", self.font_lg, GREEN, ((W - self.font_lg.size("CALIBRATION COMPLETE")[0]) // 2, H // 2 - 30))
+            detail = cal.get("detail", "")
+            self.draw_glow_text(detail, self.font_sm, t["text_bright"], ((W - self.font_sm.size(detail)[0]) // 2, H // 2 + 10))
             return True
 
         s.fill(t["bg"])
         pygame.draw.line(s, AMBER, (0, 0), (W, 0), 2)
 
         # Title
-        title = self.font_lg.render("Voice Calibration", True, AMBER)
-        s.blit(title, ((W - title.get_width()) // 2, 8))
+        self.draw_glow_text("VOICE CALIBRATION", self.font_lg, AMBER, ((W - self.font_lg.size("VOICE CALIBRATION")[0]) // 2, 8))
 
-        mic = cal.get("mic", "")
+        mic = cal.get("mic", "").upper()
         rnd = cal.get("round", 0)
         total = cal.get("total", 1)
         progress = cal.get("progress", 0)
         cur_gain = cal.get("gain", 0)
-        detail = cal.get("detail", "")
+        detail = cal.get("detail", "").upper()
 
         # Mic + round
-        info = self.font_md.render(f"{mic}", True, t["text_bright"])
-        s.blit(info, ((W - info.get_width()) // 2, 38))
-
-        rnd_text = self.font_sm.render(f"Round {rnd}/{total}", True, t["text_med"])
-        s.blit(rnd_text, ((W - rnd_text.get_width()) // 2, 58))
+        if mic:
+            self.draw_glow_text(f"TESTING: {mic}", self.font_md, t["text_bright"], ((W - self.font_md.size(f"TESTING: {mic}")[0]) // 2, 38))
+            rnd_str = f"ROUND {rnd} OF {total}"
+            self.draw_glow_text(rnd_str, self.font_sm, t["text_med"], ((W - self.font_sm.size(rnd_str)[0]) // 2, 58))
 
         # Progress bar
-        bar_w = W - 40
-        bar_h = 8
-        bar_x = 20
-        bar_y = 80
-        pygame.draw.rect(s, t["border"], (bar_x, bar_y, bar_w, bar_h), border_radius=3)
+        bar_w = W - 60
+        bar_h = 12
+        bar_x = 30
+        bar_y = 85
+        pygame.draw.rect(s, t["border"], (bar_x, bar_y, bar_w, bar_h), border_radius=4)
         fill = max(0, min(int(bar_w * progress / 100), bar_w))
         if fill > 1:
-            pygame.draw.rect(s, AMBER, (bar_x, bar_y, fill, bar_h), border_radius=3)
+            pygame.draw.rect(s, AMBER, (bar_x, bar_y, fill, bar_h), border_radius=4)
 
         # Current action
         if status == "recording":
-            # Pulsing dot to show recording
             pulse = int(time.time() * 3) % 2
-            if pulse:
-                pygame.draw.circle(s, RED, (bar_x + fill - 2, bar_y + 4), 4)
-            act = self.font_sm.render("Recording...", True, RED)
+            color = RED if pulse else (150, 0, 0)
+            self.draw_glow_text("RECORDING...", self.font_sm, color, ((W - self.font_sm.size("RECORDING...")[0]) // 2, bar_y + 18))
+            
+            prompt = "SAY: 'HEY HONDA, WHAT'S THE WEATHER?'"
+            self.draw_glow_text(prompt, self.font_md, t["text_bright"], ((W - self.font_md.size(prompt)[0]) // 2, bar_y + 45))
         elif status == "testing":
-            act = self.font_sm.render(f"Testing gain {cur_gain}x...", True, AMBER)
+            act = f"ANALYZING {cur_gain}X GAIN..."
+            self.draw_glow_text(act, self.font_sm, AMBER, ((W - self.font_sm.size(act)[0]) // 2, bar_y + 18))
         else:
-            act = self.font_sm.render(detail, True, t["text_med"])
-        s.blit(act, ((W - act.get_width()) // 2, bar_y + 14))
+            self.draw_glow_text(detail, self.font_sm, t["text_med"], ((W - self.font_sm.size(detail)[0]) // 2, bar_y + 18))
 
-        # Gain visualization — show bars for tested gains
-        gains = [1, 2, 3, 4, 5, 6, 8]
-        gy = bar_y + 40
-        gw = (W - 40) // len(gains)
+        # Gain visualization
+        gains = [2, 4, 6, 8]
+        gy = bar_y + 80
+        gw = (W - 80) // len(gains)
 
         for i, g in enumerate(gains):
-            gx = 20 + i * gw
+            gx = 40 + i * gw
             # Highlight current gain being tested
             if g == cur_gain and status == "testing":
-                pygame.draw.rect(s, AMBER, (gx + 2, gy, gw - 4, 60), 1, border_radius=3)
+                pygame.draw.rect(s, AMBER, (gx + 4, gy, gw - 8, 30), 1, border_radius=3)
 
-            # Gain label
-            gl = self.font_xs.render(f"{g}x", True, t["text_med"])
-            s.blit(gl, (gx + (gw - gl.get_width()) // 2, gy + 48))
-
-            # Score bar (grows upward) — visual indicator
-            # We don't have live scores here but show which is being tested
-            bar_h_inner = 40
-            pygame.draw.rect(s, t["border"], (gx + 6, gy + 4, gw - 12, bar_h_inner), border_radius=2)
+            gl = self.font_xs.render(f"{g}X", True, t["text_med"])
+            s.blit(gl, (gx + (gw - gl.get_width()) // 2, gy + 35))
+            
+            # Simple placeholder for gain bars
+            pygame.draw.rect(s, t["border"], (gx + 8, gy + 4, gw - 16, 22), border_radius=2)
+            if g < cur_gain or (g == cur_gain and status != "testing"):
+                pygame.draw.rect(s, t["primary_dim"], (gx + 8, gy + 4, gw - 16, 22), border_radius=2)
 
         # Bottom status with ETA
         eta = cal.get("eta", "")
         if eta:
-            eta_t = self.font_sm.render(eta, True, AMBER)
-            s.blit(eta_t, ((W - eta_t.get_width()) // 2, H - 35))
+            self.draw_glow_text(f"ESTIMATED: {eta}", self.font_sm, t["text_dim"], ((W - self.font_sm.size(f"ESTIMATED: {eta}")[0]) // 2, H - 32))
 
-        pct = self.font_xs.render(f"{progress}%", True, AMBER)
-        s.blit(pct, (W - pct.get_width() - 10, H - 16))
-
-        hint = self.font_xs.render("Testing voice recognition at each gain...", True, t["text_dim"])
-        s.blit(hint, (10, H - 16))
-
+        hint = "KEEP CAR INTERIOR QUIET FOR BEST RESULTS"
+        self.draw_glow_text(hint, self.font_xs, t["text_dim"], ((W - self.font_xs.size(hint)[0]) // 2, H - 16))
         return True
 
     def draw_keys_overlay(self):
@@ -1137,24 +1149,34 @@ class CarHUD:
         W, H = self.width, self.height
         s = self.surf
         t = self.t
-        frame_size = W * H * 3
-
-        # Start persistent camera capture if not running
+        
+        # Start persistent camera capture if not running or wrong index
         if self.camera_cap is None or self.camera_cap.poll() is not None:
             try:
-                # Auto-detect webcam device
-                cam_dev = "/dev/video0"
+                # Find the requested camera device
+                cam_dev = f"/dev/video{self.camera_idx*2}" # common mapping on Pi
                 try:
                     r = subprocess.run(["v4l2-ctl", "--list-devices"],
                                        capture_output=True, text=True, timeout=3)
                     lines = r.stdout.split("\n")
-                    for i, line in enumerate(lines):
-                        if "Webcam" in line or "C925" in line or "USB" in line:
-                            if i + 1 < len(lines):
-                                dev = lines[i + 1].strip()
-                                if dev.startswith("/dev/video"):
-                                    cam_dev = dev
-                                    break
+                    found_devs = []
+                    current_bus = ""
+                    for line in lines:
+                        if ":" in line and not line.startswith("\t"):
+                            current_bus = line.lower()
+                        elif line.strip().startswith("/dev/video"):
+                            dev = line.strip()
+                            if "bcm2835" in current_bus or "unicam" in current_bus:
+                                continue
+                            # Check caps
+                            res = subprocess.run(["v4l2-ctl", "--device", dev, "--all"],
+                                                 capture_output=True, text=True, timeout=2)
+                            if "Device Caps      : 0x04200001" in res.stdout:
+                                found_devs.append(dev)
+                    
+                    found_devs = sorted(list(set(found_devs)))
+                    if self.camera_idx < len(found_devs):
+                        cam_dev = found_devs[self.camera_idx]
                 except Exception:
                     pass
 
@@ -1167,13 +1189,15 @@ class CarHUD:
                     "-f", "rawvideo", "-pix_fmt", "rgb24",
                     "-an", "-"
                 ], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                self.camera_frame = None # clear old frame
             except Exception:
                 s.fill(t["bg"])
                 msg = self.font_md.render("Camera unavailable", True, AMBER)
                 s.blit(msg, ((W - msg.get_width()) // 2, H // 2))
                 return
 
-        # Read one frame at 320x240, scale to fill screen
+        # Label for which camera we are seeing
+        cam_label = f"CAMERA {self.camera_idx}"
         cam_frame_size = self._cam_w * self._cam_h * 3
         try:
             raw = self.camera_cap.stdout.read(cam_frame_size)
@@ -1182,6 +1206,11 @@ class CarHUD:
                 frame = pygame.transform.scale(small, (W, H))
                 s.blit(frame, (0, 0))
                 self.camera_frame = frame
+                
+                # Draw camera label
+                lt = self.font_sm.render(f"CAMERA {self.camera_idx}", True, (255, 255, 255))
+                pygame.draw.rect(s, (0, 0, 0, 150), (10, 10, lt.get_width() + 10, lt.get_height() + 4))
+                s.blit(lt, (15, 12))
             elif self.camera_frame:
                 s.blit(self.camera_frame, (0, 0))
             else:
@@ -1256,21 +1285,40 @@ class CarHUD:
                             self.show_terminal = True
                     # Keyboard shortcuts (when keyboard connected)
                     elif event.key == K_c:
-                        self.show_camera = not self.show_camera
-                        if self.show_camera:
+                        if not self.show_camera:
+                            # Start showing camera 0
+                            self.show_camera = True
+                            self.camera_idx = 0
                             # Stop dashcam to free the webcam device
                             subprocess.run(["sudo", "systemctl", "stop", "car-hud-dashcam"],
                                            capture_output=True, timeout=5)
-                            subprocess.run(["pkill", "-f", "ffmpeg.*video0"],
-                                           capture_output=True, timeout=3)
                             time.sleep(0.5)
                         else:
-                            # Close camera and restart dashcam
-                            if self.camera_cap:
-                                self.camera_cap.kill()
-                                self.camera_cap = None
-                            subprocess.run(["sudo", "systemctl", "start", "car-hud-dashcam"],
-                                           capture_output=True, timeout=5)
+                            # Already showing a camera, try to move to next or turn off
+                            # Check how many cameras are available
+                            cam_count = 1
+                            try:
+                                with open("/tmp/car-hud-dashcam-data") as f:
+                                    cd = json.load(f)
+                                    cam_count = cd.get("cam_count", 1)
+                            except Exception:
+                                pass
+                            
+                            self.camera_idx += 1
+                            if self.camera_idx >= cam_count:
+                                # Wrap around to off
+                                self.show_camera = False
+                                if self.camera_cap:
+                                    self.camera_cap.kill()
+                                    self.camera_cap = None
+                                subprocess.run(["sudo", "systemctl", "start", "car-hud-dashcam"],
+                                               capture_output=True, timeout=5)
+                            else:
+                                # Switch to next camera
+                                if self.camera_cap:
+                                    self.camera_cap.kill()
+                                    self.camera_cap = None
+                                # draw_camera_view will pick up the new self.camera_idx
                     elif event.key == K_h:
                         # Simulate help command
                         signal_hud_file("show", "help")
@@ -1361,12 +1409,35 @@ class CarHUD:
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                         elif vsig.get("action") == "show" and vsig.get("target") == "camera":
                             if not self.show_camera:
+                                # Start showing camera 0
                                 subprocess.run(["sudo", "systemctl", "stop", "car-hud-dashcam"],
                                                capture_output=True, timeout=5)
-                                subprocess.run(["pkill", "-f", "ffmpeg.*video0"],
-                                               capture_output=True, timeout=3)
                                 time.sleep(0.5)
-                            self.show_camera = True
+                                self.show_camera = True
+                                self.camera_idx = 0
+                            else:
+                                # Already showing, cycle to next
+                                cam_count = 1
+                                try:
+                                    with open("/tmp/car-hud-dashcam-data") as f:
+                                        cd = json.load(f)
+                                        cam_count = cd.get("cam_count", 1)
+                                except Exception:
+                                    pass
+                                
+                                self.camera_idx += 1
+                                if self.camera_idx >= cam_count:
+                                    self.show_camera = False
+                                    if self.camera_cap:
+                                        self.camera_cap.kill()
+                                        self.camera_cap = None
+                                    subprocess.run(["sudo", "systemctl", "start", "car-hud-dashcam"],
+                                                   capture_output=True, timeout=5)
+                                else:
+                                    if self.camera_cap:
+                                        self.camera_cap.kill()
+                                        self.camera_cap = None
+                                    # draw_camera_view will pick up the new self.camera_idx
             except Exception:
                 pass
 

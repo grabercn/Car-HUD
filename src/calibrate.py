@@ -86,7 +86,7 @@ def record_sample(card, duration=5):
 _vosk_model = None
 
 def test_gain(samples, gain):
-    """Run Vosk on samples at given gain, return (text, score)."""
+    """Run Vosk on samples at given gain, return (text, score, snr)."""
     global _vosk_model
     from vosk import Model, KaldiRecognizer
 
@@ -95,10 +95,16 @@ def test_gain(samples, gain):
     rec = KaldiRecognizer(_vosk_model, SAMPLE_RATE)
     rec.SetWords(True)
 
-    # Only test first 8 seconds (contains key phrases, saves CPU)
+    # Boost and clip
     max_samples = SAMPLE_RATE * 8
     trimmed = samples[:max_samples]
-    boosted = [max(-32767, min(32767, s * gain)) for s in trimmed]
+    
+    # Calculate raw RMS and SNR before boost
+    raw_rms = math.sqrt(sum(s*s for s in trimmed[:1000]) / 1000)
+    speech_rms = math.sqrt(sum(s*s for s in trimmed) / len(trimmed))
+    snr = speech_rms / max(1.0, raw_rms)
+
+    boosted = [max(-32767, min(32767, int(s * gain))) for s in trimmed]
     data = struct.pack(f"<{len(boosted)}h", *boosted)
 
     texts = []
@@ -111,121 +117,72 @@ def test_gain(samples, gain):
 
     full = " ".join(texts).lower()
 
-    # Score based on the actual calibration phrases:
-    # "hey honda whats the weather"
-    # "hey honda change the color to green"
-    # "hey honda change the color to red"
-    # "hey honda what is 2+2"
     targets = {
-        "honda": 4, "hondo": 3,  # wake word (most important)
-        "weather": 2,
-        "color": 2,
-        "green": 2,
-        "red": 2, "read": 1,
-        "two": 2, "plus": 2,
-        "change": 1,
-        "what": 1,
+        "honda": 5, "hondo": 4, "hundred": 2, "hunter": 2,
+        "weather": 3, "color": 3, "green": 3, "red": 3,
+        "two": 2, "plus": 2, "what": 1, "change": 1
     }
     score = sum(weight for word, weight in targets.items() if word in full)
 
-    return full, score
+    return full, score, snr
 
 
 def calibrate(mic_card, mic_name, rounds=2):
-    """Run calibration by playing the voice sample through speakers
-    and recording what the mic picks up through room acoustics.
-    Tests multiple gains to find optimal settings.
-    """
     VOICE_SAMPLE = "/tmp/voice_sample.wav"
     if not os.path.exists(VOICE_SAMPLE):
-        log(f"  No voice sample at {VOICE_SAMPLE} — skipping")
-        return 5, 0
+        # Create a basic sample if missing? No, user should have it
+        log(f"  No voice sample at {VOICE_SAMPLE}")
+        return 5.0, 0
 
-    # Get exact sample duration
-    w = wave.open(VOICE_SAMPLE)
-    sample_duration = int(w.getnframes() / w.getframerate()) + 2
-    w.close()
+    log(f"Calibrating {mic_name} (card {mic_card})...")
+    write_status("calibrating", 0, f"Initializing {mic_name}...")
 
-    # Trim to just "hey honda what's the weather" (first 4 seconds) for fast testing
-    TRIMMED = f"{CALIB_DIR}/trimmed.wav"
-    subprocess.run(["ffmpeg", "-i", VOICE_SAMPLE, "-t", "4", "-y", TRIMMED],
-                   capture_output=True, timeout=10)
-    play_file = TRIMMED if os.path.exists(TRIMMED) else VOICE_SAMPLE
-    play_duration = 4 if os.path.exists(TRIMMED) else sample_duration
-
-    log(f"Calibrating {mic_name} (card {mic_card}) — {rounds} rounds...")
-    write_status("calibrating", 0, f"Calibrating {mic_name}...")
-
-    gain_scores = {}
-    gain_texts = {}
-    gains = [2, 4, 6, 8]
-    for gain in gains:
-        gain_scores[gain] = 0
-        gain_texts[gain] = []
-
+    gain_results = {}
+    gains = [2.0, 4.0, 6.0, 8.0, 10.0]
     total_steps = len(gains) * rounds
     current_step = 0
 
     for gain in gains:
+        gain_results[gain] = {"scores": [], "snrs": [], "texts": []}
         for r in range(rounds):
             current_step += 1
             pct = int(((current_step - 1) / total_steps) * 100)
             
-            log(f"  Testing gain {gain}x, round {r+1}/{rounds}...")
-            write_status("recording", pct, f"Playing sample (Gain {gain}x)...",
+            write_status("recording", pct, f"Testing {gain}x (Round {r+1})...",
                          mic=mic_name, gain=gain, round_num=r+1, total_rounds=rounds)
 
-            # Play voice sample through speaker while recording from mic
-            rec_file = f"{CALIB_DIR}/calib_{mic_card}_{gain}_{r}.wav"
-            rec_dur = play_duration + 2
-            rec_proc = subprocess.Popen(
-                ["arecord", "-D", f"plughw:{mic_card},0",
-                 "-d", str(rec_dur),
-                 "-f", "S16_LE", "-r", str(SAMPLE_RATE), "-c", "1", rec_file],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            time.sleep(0.4)
+            samples = record_sample(mic_card, duration=5)
+            if not samples:
+                continue
 
-            # Play the trimmed sample
-            subprocess.run(["aplay", "-D", "default", play_file],
-                           capture_output=True, timeout=play_duration + 5)
+            write_status("testing", pct + 2, f"Analyzing {gain}x...",
+                         mic=mic_name, gain=gain, round_num=r+1, total_rounds=rounds)
+            
+            text, score, snr = test_gain(samples, gain)
+            gain_results[gain]["scores"].append(score)
+            gain_results[gain]["snrs"].append(snr)
+            gain_results[gain]["texts"].append(text)
+            log(f"    {gain}x R{r+1}: score={score} snr={snr:.1f} '{text[:30]}'")
 
-            try:
-                rec_proc.wait(timeout=rec_dur + 5)
-            except subprocess.TimeoutExpired:
-                rec_proc.kill()
+    # Calculate averages and pick best
+    best_gain = 5.0
+    max_avg_score = -1
+    
+    for gain, data in gain_results.items():
+        if not data["scores"]: continue
+        avg_score = sum(data["scores"]) / len(data["scores"])
+        avg_snr = sum(data["snrs"]) / len(data["snrs"])
+        
+        # We want high score, but also decent SNR (not over-boosted noise)
+        if avg_score > max_avg_score:
+            max_avg_score = avg_score
+            best_gain = gain
+        elif avg_score == max_avg_score and max_avg_score > 0:
+            # Tie breaker: lower gain is better (less distortion)
+            pass
 
-            # Load and test immediately
-            try:
-                w = wave.open(rec_file)
-                frames = w.readframes(w.getnframes())
-                samples = list(struct.unpack(f"<{len(frames)//2}h", frames))
-                w.close()
-                os.remove(rec_file)
-                
-                write_status("testing", pct + 2, f"Analyzing {gain}x...",
-                             mic=mic_name, gain=gain, round_num=r+1, total_rounds=rounds)
-                
-                text, score = test_gain(samples, gain)
-                gain_scores[gain] += score
-                gain_texts[gain].append(text[:80])
-                log(f"    round {r+1} score: +{score} '{text[:40]}'")
-            except Exception as e:
-                log(f"    round {r+1} failed: {e}")
-
-            time.sleep(0.5)
-
-    # Pick best gain
-    best_gain = max(gain_scores, key=gain_scores.get)
-    best_score = gain_scores[best_gain]
-
-    log(f"\n  === {mic_name} RESULTS ===")
-    for gain in sorted(gain_scores):
-        marker = " <<<" if gain == best_gain else ""
-        log(f"    gain={gain}x: total_score={gain_scores[gain]}{marker}")
-        for t in gain_texts[gain][:2]:
-            log(f"      '{t}'")
-    log(f"  BEST: gain={best_gain}x (score {best_score})")
-    return best_gain, best_score
+    log(f"  Result for {mic_name}: {best_gain}x (Avg Score: {max_avg_score:.1f})")
+    return best_gain, max_avg_score
 
 
 def main():

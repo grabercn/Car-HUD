@@ -175,6 +175,14 @@ INTENTS = {
                      "live camera", "live feed", "show me camera",
                      "pull up camera", "what do you see"],
     },
+    "switch_camera": {
+        "action": "show", "target": "camera",
+        "keywords": {"switch": 3, "next": 2, "other": 2, "second": 2,
+                     "alternate": 2, "swap": 3, "change": 1, "camera": 1},
+        "phrases": ["switch camera", "next camera", "other camera",
+                     "show other camera", "change camera", "swap camera",
+                     "second camera", "show me other camera"],
+    },
     "calibrate": {
         "action": "system", "target": "calibrate",
         "keywords": {"calibrate": 3, "calibration": 3, "tune": 2, "tuning": 2,

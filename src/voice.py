@@ -100,14 +100,20 @@ def _sounds_like_honda(w):
     if w.startswith(("hon", "hun", "han")) and len(w) >= 5: return True
     return False
 
-def check_wake_word(text):
+def check_wake_word(text, learned_wake=False):
+    if learned_wake: return True
     words = text.lower().split()
     for w in words:
         if w in ("honda", "hondo"): return True
     for i in range(len(words) - 1):
         if words[i] in _HEY_LIKE and _sounds_like_honda(words[i + 1]): return True
+    
+    # Check for common phonemes if we have at least 2 words
     if len(words) >= 2:
         for w in words:
+            # Phoneme-like detection: "ha-nd-a", "ho-nd-a"
+            if "h" in w and "nd" in w and ("a" in w or "o" in w):
+                if len(w) >= 4 and len(w) <= 8: return True
             if _sounds_like_honda(w): return True
     return False
 
@@ -119,6 +125,7 @@ class MicReader:
         self.name = name
         self.gain = gain
         self.rms = 0.0
+        self.snr = 0.0
         self.alive = False
         self._buf = b""
         self._lock = threading.Lock()
@@ -142,27 +149,36 @@ class MicReader:
                     samps = struct.unpack(f"<{len(raw)//2}h", raw)
                     raw_rms = math.sqrt(sum(s*s for s in samps[:100]) / 100)
 
+                    # Simple SNR tracking
+                    if raw_rms < noise_floor * 1.2:
+                        noise_floor = noise_floor * 0.98 + raw_rms * 0.02
+                    
+                    self.snr = raw_rms / max(1.0, noise_floor)
+
                     # Adaptive gain per frame
-                    if raw_rms < noise_floor * 1.5:
-                        noise_floor = noise_floor * 0.95 + raw_rms * 0.05
-                    elif raw_rms > noise_floor * 2.5:
+                    if raw_rms > noise_floor * 2.2:
                         # Voice detected — adapt gain toward target
                         current_out = raw_rms * self.gain
                         if current_out > 0:
-                            ratio = 4000.0 / current_out
-                            self.gain = self.gain * 0.92 + (self.gain * ratio) * 0.08
-                            self.gain = max(1.0, min(8.0, self.gain))  # adaptive, capped at 8x
+                            ratio = 4500.0 / current_out
+                            self.gain = self.gain * 0.94 + (self.gain * ratio) * 0.06
+                            self.gain = max(1.0, min(12.0, self.gain))  # higher cap
 
-                    g = int(self.gain)
-                    boosted = struct.pack(f"<{len(samps)}h",
-                        *[max(-32767, min(32767, s * g)) for s in samps])
+                    g = self.gain
+                    # Apply noise gate: if SNR is very low, suppress frame
+                    if self.snr < 1.3:
+                        boosted = b"\x00" * len(raw)
+                    else:
+                        boosted = struct.pack(f"<{len(samps)}h",
+                            *[max(-32767, min(32767, int(s * g))) for s in samps])
+                    
                     bsamps = struct.unpack(f"<{len(boosted)//2}h", boosted)
                     self.rms = math.sqrt(sum(s*s for s in bsamps[:100]) / 100)
 
                     with self._lock:
                         self._buf += boosted
-                        if len(self._buf) > CHUNK * 2 * 15:
-                            self._buf = self._buf[-(CHUNK * 2 * 8):]
+                        if len(self._buf) > CHUNK * 2 * 20:
+                            self._buf = self._buf[-(CHUNK * 2 * 10):]
                 proc.kill()
             except Exception:
                 pass
@@ -238,50 +254,63 @@ def main():
     wake_chimed = False
     frames = 0
     nbytes = CHUNK * 2
-    # Accumulate text after wake word to catch full sentences
     accumulated_text = ""
     accumulate_timeout = 0
 
-    def execute(cmd, text):
+    def execute(cmd, text, m1_gain, m2_gain, m1_snr, m2_snr):
         reply = cmd.get("reply", "")
         source = cmd.get("source", "local")
         if reply: speak(reply)
         signal_hud(cmd["action"], cmd["target"], text,
                    extra={"reply": reply, "source": source})
+        # Learn from this success
+        reinforce_audio(True, m1_gain, m2_gain, m1_snr, m2_snr)
+        update_voice_profile(4000)
 
-    def process_text(text):
+    def process_text(text, m1_gain, m2_gain, m1_snr, m2_snr):
         """Handle recognized text — wake detection + command processing."""
         nonlocal awaiting, cmd_timeout, wake_chimed
-        is_wake = check_wake_word(text)
+        
+        # Apply word learning
+        from wordlearn import correct, learn, learn_wake
+        corrected, confidence, phrase_intent, learned_wake = correct(text)
+        
+        is_wake = check_wake_word(text, learned_wake)
 
         try:
             with open("/tmp/car-hud-transcript", "w") as f:
-                json.dump({"text": text, "wake": is_wake or awaiting,
+                json.dump({"text": text, "corrected": corrected, "wake": is_wake or awaiting,
                             "time": time.time()}, f)
         except Exception: pass
 
         if is_wake or awaiting:
-            action, target, reply, source = process_command(text)
+            # Try learned phrase first
+            if phrase_intent and ":" in phrase_intent:
+                action, target = phrase_intent.split(":", 1)
+                log(f"Heard learned phrase: {phrase_intent}")
+                execute({"action": action, "target": target}, text, m1_gain, m2_gain, m1_snr, m2_snr)
+                awaiting = False
+                return True
+
+            # Use corrected text for Gemini/Local
+            action, target, reply, source = process_command(corrected)
             if action != "unknown":
-                cmd = {"action": action, "target": target,
-                       "reply": reply, "source": source}
                 log(f"Command [{source}]: {action}->{target}")
                 play_ok()
-                execute(cmd, text)
-                reinforce_audio(True, gain1, gain2, 0, 0)
-                update_voice_profile(0)
+                execute({"action": action, "target": target, "reply": reply, "source": source}, 
+                        text, m1_gain, m2_gain, m1_snr, m2_snr)
                 awaiting = False
                 return True
             elif is_wake:
-                # Wake detected — stay listening for command
-                if not wake_chimed: play_wake()
+                if not wake_chimed: 
+                    play_wake()
+                    # Learn that this text means wake word
+                    learn_wake(text)
                 awaiting = True
                 cmd_timeout = time.time() + 10
                 log(f"Wake: '{text}'")
                 signal_hud("wake", "listening")
             elif awaiting:
-                # Got text while awaiting command — don't close yet
-                # The accumulator will handle it
                 cmd_timeout = time.time() + 6
                 signal_hud("wake", "listening")
         return False
@@ -293,12 +322,15 @@ def main():
             d2 = mics[1].read(nbytes) if len(mics) > 1 else None
             m1_rms = mics[0].rms if len(mics) > 0 else 0
             m2_rms = mics[1].rms if len(mics) > 1 else 0
+            m1_snr = mics[0].snr if len(mics) > 0 else 0
+            m2_snr = mics[1].snr if len(mics) > 1 else 0
+            m1_gain = mics[0].gain if len(mics) > 0 else 1
+            m2_gain = mics[1].gain if len(mics) > 1 else 1
 
             if not d1 and not d2:
                 time.sleep(0.01)
                 continue
 
-            # Mic levels for HUD
             frames += 1
             if frames % 3 == 0:
                 try:
@@ -306,27 +338,16 @@ def main():
                         f.write(f"{min(1,m1_rms/6000):.3f},{min(1,m2_rms/6000):.3f}")
                 except Exception: pass
 
-            # Pick loudest mic's audio for this frame
-            best = None
-            if d1 and d2:
-                best = d1 if mics[0].rms > mics[1].rms else d2
-            elif d1:
-                best = d1
-            elif d2:
-                best = d2
+            # Pick best audio
+            best = d1 if m1_snr >= m2_snr else d2
+            if not best: continue
 
-            if not best:
-                continue
-
-            # Single recognizer — feed best audio
             text = ""
             partial_text = ""
             if rec.AcceptWaveform(best):
                 result = json.loads(rec.Result())
-                # Check alternatives for better wake word detection
                 alts = result.get("alternatives", [])
                 if alts:
-                    # Pick the alternative that contains honda-like words
                     best_alt = alts[0].get("text", "").strip()
                     for alt in alts:
                         t = alt.get("text", "")
@@ -341,58 +362,45 @@ def main():
 
             if text:
                 wake_chimed = False
-                log(f"Heard: '{text}'")
+                log(f"Heard: '{text}' (SNR1={m1_snr:.1f}, SNR2={m2_snr:.1f})")
 
                 if awaiting:
-                    # After wake: accumulate fragments until silence
                     accumulated_text = (accumulated_text + " " + text).strip()
-                    accumulate_timeout = time.time() + 3.0  # wait 3s for complete sentence
+                    accumulate_timeout = time.time() + 2.5
                 elif check_wake_word(text):
-                    # Wake word in this text — check if command is also in it
                     accumulated_text = text
-                    process_text(text)
-                    if awaiting:
-                        accumulate_timeout = time.time() + 1.5
+                    process_text(text, m1_gain, m2_gain, m1_snr, m2_snr)
+                    if awaiting: accumulate_timeout = time.time() + 1.2
                 else:
-                    process_text(text)
+                    process_text(text, m1_gain, m2_gain, m1_snr, m2_snr)
 
-            # Flush accumulated text after timeout — this is our best shot
             if accumulated_text and accumulate_timeout and time.time() > accumulate_timeout:
-                log(f"Accumulated: '{accumulated_text}'")
+                log(f"Processing accumulated: '{accumulated_text}'")
                 play_think()
-                result = process_text(accumulated_text)
-                if not result:
-                    # Command failed — still try, Gemini might understand
-                    log(f"Retrying with Gemini...")
+                if not process_text(accumulated_text, m1_gain, m2_gain, m1_snr, m2_snr):
+                    # Final try with Gemini explicitly
                     action, target, reply, source = process_command(accumulated_text)
                     if action != "unknown":
-                        cmd = {"action": action, "target": target,
-                               "reply": reply, "source": source}
                         play_ok()
-                        execute(cmd, accumulated_text)
+                        execute({"action": action, "target": target, "reply": reply, "source": source},
+                                accumulated_text, m1_gain, m2_gain, m1_snr, m2_snr)
                     else:
                         play_timeout()
-                        signal_hud("status", "timeout")
+                        reinforce_audio(False, m1_gain, m2_gain, m1_snr, m2_snr)
                 awaiting = False
                 accumulated_text = ""
                 accumulate_timeout = 0
 
-            # Partials — check for wake word
-            pt = partial_text
-            if pt:
-                try:
-                    with open("/tmp/car-hud-transcript", "w") as f:
-                        # Use "..." to indicate active listening if text is empty
-                        display_text = pt if pt.strip() else "..."
-                        json.dump({"partial": display_text, "wake": awaiting,
-                                    "time": time.time()}, f)
-                except Exception: pass
-                if not awaiting and not wake_chimed and check_wake_word(pt):
+            # Partial wake detection
+            if partial_text and not awaiting and not wake_chimed:
+                from wordlearn import correct
+                _, _, _, learned_wake = correct(partial_text)
+                if check_wake_word(partial_text, learned_wake):
                     play_wake()
                     wake_chimed = True
                     awaiting = True
                     cmd_timeout = time.time() + 10
-                    log(f"Wake (partial): '{pt}'")
+                    log(f"Wake (partial): '{partial_text}'")
                     signal_hud("wake", "listening")
 
             if awaiting and time.time() > cmd_timeout:

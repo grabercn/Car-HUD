@@ -51,21 +51,25 @@ git clone --depth 1 "$REPO_URL" Car-HUD-update 2>/dev/null
 if [ ! -d /tmp/Car-HUD-update/src ]; then
     log "Download failed"
     write_status "failed" "Download failed" 0
+    # Play failure chime
+    aplay -q "$INSTALL_DIR/chime_err.wav" 2>/dev/null || true
     exit 1
 fi
 
 write_status "installing" "Installing update..." 60
 
 # Stop services
-for svc in northstar-hud car-hud-voice car-hud-web; do
+for svc in northstar-hud car-hud-voice car-hud-web car-hud-music car-hud-dashcam; do
     systemctl stop "$svc" 2>/dev/null || true
 done
 
 # Backup current
-cp -r "$INSTALL_DIR"/*.py "$INSTALL_DIR/.backup_$(date +%Y%m%d)" 2>/dev/null || true
+mkdir -p "$INSTALL_DIR/backups"
+cp "$INSTALL_DIR"/*.py "$INSTALL_DIR/backups/.backup_$(date +%Y%m%d_%H%M%S)" 2>/dev/null || true
 
 # Copy new files
 cp /tmp/Car-HUD-update/src/*.py "$INSTALL_DIR/"
+cp /tmp/Car-HUD-update/src/*.sh "$INSTALL_DIR/"
 
 # Update services if changed
 if [ -d /tmp/Car-HUD-update/services ]; then
@@ -75,16 +79,17 @@ fi
 
 write_status "restarting" "Restarting services..." 80
 
-# Save version
+# Save version and set update success flag for bootsplash
 echo "$REMOTE_HASH" > "$INSTALL_DIR/.version"
-
-# Restart
-for svc in northstar-hud car-hud-voice car-hud-web car-hud-obd car-hud-wifi car-hud-dashcam; do
-    systemctl start "$svc" 2>/dev/null || true
-done
+touch "$INSTALL_DIR/.update_pending"
 
 # Cleanup
 rm -rf /tmp/Car-HUD-update
 
-write_status "done" "Updated to $REMOTE_HASH" 100
-log "Update complete: $REMOTE_HASH"
+write_status "done" "Updated to $REMOTE_HASH. Rebooting..." 100
+log "Update complete: $REMOTE_HASH. Scheduling reboot..."
+
+# Reboot after a short delay to let HUD show the status
+(sleep 10 && reboot) &
+
+exit 0

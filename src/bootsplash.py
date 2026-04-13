@@ -105,9 +105,16 @@ def main():
 
     pygame.mouse.set_visible(False)
 
-    # Play startup chime
-    subprocess.Popen(["aplay", "-q", "/home/chrismslist/northstar/chime_startup.wav"],
-                     stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+    # Play startup chime (Unique chime if just updated)
+    UPDATE_FLAG = "/home/chrismslist/northstar/.update_pending"
+    if os.path.exists(UPDATE_FLAG):
+        subprocess.Popen(["aplay", "-q", "/home/chrismslist/northstar/chime_update_ok.wav"],
+                         stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+        try: os.remove(UPDATE_FLAG)
+        except: pass
+    else:
+        subprocess.Popen(["aplay", "-q", "/home/chrismslist/northstar/chime_startup.wav"],
+                         stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 
     # Load splash image
     splash_path = "/home/chrismslist/northstar/splash.png"
