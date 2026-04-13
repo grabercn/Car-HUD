@@ -1,0 +1,21 @@
+[Unit]
+Description=Honda Accord Boot Splash
+DefaultDependencies=no
+After=local-fs.target
+Before=sysinit.target
+
+[Service]
+Type=simple
+Environment=PYGAME_HIDE_SUPPORT_PROMPT=1
+Environment=SDL_VIDEODRIVER=kmsdrm
+Environment=SDL_FBDEV=/dev/fb0
+ExecStartPre=-/bin/sh -c "setterm --clear all --cursor off > /dev/tty1 2>/dev/null"
+ExecStart=/usr/bin/python3 -W ignore /home/chrismslist/northstar/bootsplash.py
+StandardInput=tty
+StandardOutput=null
+StandardError=null
+TTYPath=/dev/tty1
+TTYReset=yes
+
+[Install]
+WantedBy=sysinit.target

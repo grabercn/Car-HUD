@@ -1,0 +1,25 @@
+[Unit]
+Description=Honda Accord HUD
+After=multi-user.target
+Conflicts=getty@tty1.service
+
+[Service]
+Type=simple
+User=chrismslist
+SupplementaryGroups=video render input
+Environment=PYGAME_HIDE_SUPPORT_PROMPT=1
+Environment=SDL_VIDEODRIVER=kmsdrm
+Environment=SDL_FBDEV=/dev/fb0
+ExecStartPre=-/bin/sh -c "setterm --clear all --cursor off > /dev/tty1 2>/dev/null"
+ExecStart=/usr/bin/python3 -W ignore -u /home/chrismslist/northstar/hud.py
+Restart=on-failure
+RestartSec=5
+StandardInput=tty
+StandardOutput=null
+StandardError=null
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+
+[Install]
+WantedBy=multi-user.target

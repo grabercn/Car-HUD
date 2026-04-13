@@ -1,0 +1,16 @@
+[Unit]
+Description=Honda Accord WiFi Manager
+After=multi-user.target NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/python3 -W ignore /home/chrismslist/northstar/wifi_service.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

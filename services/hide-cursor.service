@@ -1,0 +1,12 @@
+[Unit]
+Description=Hide mouse cursor
+DefaultDependencies=no
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c "echo 0 > /sys/class/graphics/fbcon/cursor_blink 2>/dev/null || true"
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target

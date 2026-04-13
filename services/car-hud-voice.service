@@ -1,0 +1,16 @@
+[Unit]
+Description=Honda Accord Voice Commands
+After=multi-user.target northstar-hud.service sound.target
+Wants=northstar-hud.service
+
+[Service]
+Type=simple
+User=chrismslist
+ExecStart=/usr/bin/python3 -W ignore /home/chrismslist/northstar/voice.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

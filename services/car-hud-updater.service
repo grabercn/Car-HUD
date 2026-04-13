@@ -1,0 +1,13 @@
+[Unit]
+Description=Car-HUD Auto Updater
+After=multi-user.target NetworkManager.service car-hud-wifi.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStartPre=/bin/sleep 15
+ExecStart=/bin/bash /home/chrismslist/northstar/update.sh
+
+[Install]
+WantedBy=multi-user.target

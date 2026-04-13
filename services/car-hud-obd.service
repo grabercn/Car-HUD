@@ -1,0 +1,16 @@
+[Unit]
+Description=Honda Accord OBD-II Monitor
+After=multi-user.target bluetooth.service
+Wants=bluetooth.service
+
+[Service]
+Type=simple
+User=chrismslist
+ExecStart=/usr/bin/python3 -W ignore /home/chrismslist/northstar/obd_service.py
+Restart=on-failure
+RestartSec=15
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
