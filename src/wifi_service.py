@@ -47,6 +47,7 @@ def write_status(data):
             json.dump(data, f)
     except Exception:
         pass
+    check_play_wifi_chime(data.get("state", ""))
 
     # Control Pi PWR LED — on=connected, off=disconnected
     try:
@@ -56,6 +57,19 @@ def write_status(data):
             f.write(led)
     except Exception:
         pass
+
+_last_wifi_state = "disconnected"
+
+def check_play_wifi_chime(state):
+    global _last_wifi_state
+    if state == "connected" and _last_wifi_state != "connected":
+        try:
+            subprocess.Popen(["aplay", "-D", "default",
+                             "/home/chrismslist/northstar/chime_wifi.wav"],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+    _last_wifi_state = state
 
 
 def run_cmd(cmd, timeout=10):

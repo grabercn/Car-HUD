@@ -399,77 +399,146 @@ class CarHUD:
             s.blit(vt, (x + w - vt.get_width(), y - vt.get_height() - 1))
 
     def draw_vehicle_page(self, obd, music):
+        """Honda Accord Hybrid instrument cluster style.
+        Central speed, vertical fuel+battery pillars, power flow, compact data.
+        """
         W, H = self.width, self.height
         s = self.surf
         t = self.t
         vd = obd.get("data", {})
+        now = datetime.datetime.now()
 
         pygame.draw.line(s, t["primary_dim"], (0, 0), (W, 0), 1)
 
-        # Warnings banner
-        warn_h = 0
-        if obd.get("warnings"):
-            for wt in obd["warnings"][:2]:
-                txt = self.font_sm.render(wt, True, RED)
-                pygame.draw.rect(s, (25, 5, 5), (0, warn_h, W, txt.get_height() + 6))
-                s.blit(txt, ((W - txt.get_width()) // 2, warn_h + 3))
-                warn_h += txt.get_height() + 6
-
-        # Speed gauge (BIG left)
-        speed = vd.get("SPEED", 0)
-        speed_pct = min(speed / 140.0, 1.0)
-        gcx = W // 4 + 5
-        gcy = 100 + warn_h
-        gr = 75
-        self.draw_arc_gauge(gcx, gcy, gr, 8, speed_pct, t["primary"])
-        self.draw_arc_gauge(gcx, gcy, gr - 12, 3, speed_pct, t["primary_dim"])
-
-        sp = self.font_xxl.render(f"{int(speed)}", True, t["primary"])
-        s.blit(sp, (gcx - sp.get_width() // 2, gcy - sp.get_height() + 4))
-        mph = self.font_xs.render("MPH", True, t["text_dim"])
-        s.blit(mph, (gcx - mph.get_width() // 2, gcy + 12))
-
-        # RPM gauge (right)
+        # Data
         rpm = vd.get("RPM", 0)
-        rpm_pct = min(rpm / 7000.0, 1.0)
-        rc = t["primary"] if rpm < 4000 else AMBER if rpm < 6000 else RED
-        rcx = W * 3 // 4 - 5
-        rcy = gcy
-        self.draw_arc_gauge(rcx, rcy, gr, 8, rpm_pct, rc)
-        self.draw_arc_gauge(rcx, rcy, gr - 12, 3, rpm_pct, t["primary_dim"])
+        speed = vd.get("SPEED", 0) * 0.621371
+        load = vd.get("ENGINE_LOAD", 0)
+        throttle = vd.get("THROTTLE_POS", 0)
+        fuel = vd.get("FUEL_LEVEL", 0)
+        hv = vd.get("HYBRID_BATTERY_REMAINING", 0)
+        cool = vd.get("COOLANT_TEMP", 0)
+        volts = vd.get("CONTROL_MODULE_VOLTAGE", 0)
+        intake = vd.get("INTAKE_TEMP", 0)
+        ev = rpm < 100
 
-        rp = self.font_lg.render(f"{int(rpm)}", True, t["text_bright"])
-        s.blit(rp, (rcx - rp.get_width() // 2, rcy - rp.get_height() + 4))
-        rl = self.font_xs.render("RPM", True, t["text_dim"])
-        s.blit(rl, (rcx - rl.get_width() // 2, rcy + 12))
+        # Warnings
+        wy = 0
+        for wt in (obd.get("warnings") or [])[:2]:
+            txt = self.font_sm.render(wt, True, RED)
+            pygame.draw.rect(s, (25, 5, 5), (0, wy, W, txt.get_height() + 4))
+            s.blit(txt, ((W - txt.get_width()) // 2, wy + 2))
+            wy += txt.get_height() + 4
 
-        # Gauge bars
-        by = gcy + 28
-        bh = 8
+        # ── Top strip: time | EV/GAS badge | volts ──
+        ty = 2 + wy
+        s.blit(self.font_sm.render(now.strftime("%I:%M"), True, t["text_dim"]), (6, ty))
+        mc = GREEN if ev else t["primary"]
+        pygame.draw.rect(s, mc, (W//2 - 15, ty, 30, 13), border_radius=3)
+        ml = self.font_xs.render("EV" if ev else "GAS", True, (0, 0, 0))
+        s.blit(ml, (W//2 - ml.get_width()//2, ty + 2))
+        vl = self.font_sm.render(f"{volts:.1f}V", True, t["text_dim"])
+        s.blit(vl, (W - vl.get_width() - 6, ty))
+
+        # ── Left pillar: Fuel ──
+        px = 8
+        ph = 62
+        py = ty + 18
+        pygame.draw.rect(s, t["border"], (px, py, 10, ph), border_radius=3)
+        fh = max(0, int(ph * fuel / 100))
+        fc = GREEN if fuel > 20 else AMBER if fuel > 10 else RED
+        if fh > 0:
+            pygame.draw.rect(s, fc, (px, py + ph - fh, 10, fh), border_radius=3)
+        s.blit(self.font_xs.render("F", True, t["text_dim"]), (px + 2, py - 10))
+        s.blit(self.font_xs.render(f"{fuel:.0f}%", True, fc), (px - 2, py + ph + 3))
+        fuel_mi = int(fuel / 100 * 12.8 * 40)
+        s.blit(self.font_xs.render(f"{fuel_mi}mi", True, t["text_med"]), (px + 14, py + 4))
+
+        # ── Right pillar: HV Battery ──
+        bx = W - 18
+        pygame.draw.rect(s, t["border"], (bx, py, 10, ph), border_radius=3)
+        bh_fill = max(0, int(ph * hv / 100))
+        bc = GREEN if hv > 30 else AMBER if hv > 15 else RED
+        if bh_fill > 0:
+            pygame.draw.rect(s, bc, (bx, py + ph - bh_fill, 10, bh_fill), border_radius=3)
+        s.blit(self.font_xs.render("B", True, t["text_dim"]), (bx + 2, py - 10))
+        hv_t = self.font_xs.render(f"{hv:.0f}%", True, bc)
+        s.blit(hv_t, (bx - hv_t.get_width() + 10, py + ph + 3))
+        ev_mi = int(hv / 100 * 15)
+        ev_t = self.font_xs.render(f"{ev_mi}mi", True, GREEN)
+        s.blit(ev_t, (bx - ev_t.get_width() - 4, py + 4))
+
+        # ── Central speedometer ──
+        cx = W // 2
+        cy = py + 32
+        r = 52
+        sp_pct = min(speed / 140, 1.0)
+        self.draw_arc_gauge(cx, cy, r, 7, sp_pct, t["primary"])
+        self.draw_arc_gauge(cx, cy, r - 10, 2, sp_pct, t["primary_dim"])
+        # RPM as thin inner ring
+        rpm_pct = min(rpm / 7000, 1.0)
+        rc = t["primary_dim"] if rpm < 3000 else AMBER if rpm < 5500 else RED
+        self.draw_arc_gauge(cx, cy, r - 15, 2, rpm_pct, rc)
+
+        sp_txt = self.font_xxl.render(f"{int(speed)}", True, t["primary"])
+        s.blit(sp_txt, (cx - sp_txt.get_width()//2, cy - sp_txt.get_height() + 2))
+        s.blit(self.font_xs.render("MPH", True, t["text_dim"]),
+               (cx - 10, cy + 8))
+
+        # ── Power/Charge meter ──
+        pfy = cy + 22
+        pfw = W - 50
+        pfx = 25
+        pfh = 7
+        pfcx = pfx + pfw // 2
+
+        pygame.draw.rect(s, t["border"], (pfx, pfy, pfw, pfh), border_radius=3)
+        pygame.draw.line(s, t["text_dim"], (pfcx, pfy - 2), (pfcx, pfy + pfh + 2))
+
+        s.blit(self.font_xs.render("CHG", True, GREEN), (pfx, pfy - 10))
+        pw_l = self.font_xs.render("PWR", True, t["primary"])
+        s.blit(pw_l, (pfx + pfw - pw_l.get_width(), pfy - 10))
+
+        if ev:
+            pwr = min(throttle / 80, 1.0)
+            fw = int((pfw // 2) * pwr)
+            if fw > 1:
+                pygame.draw.rect(s, GREEN, (pfcx, pfy, fw, pfh), border_radius=3)
+        else:
+            pwr = min(load / 100, 1.0)
+            fw = int((pfw // 2) * pwr)
+            if fw > 1:
+                pc = t["primary"] if pwr < 0.6 else AMBER if pwr < 0.85 else RED
+                pygame.draw.rect(s, pc, (pfcx, pfy, fw, pfh), border_radius=3)
+            if throttle < 5 and rpm > 800:
+                rw = int((pfw // 2) * 0.15)
+                pygame.draw.rect(s, GREEN, (pfcx - rw, pfy, rw, pfh), border_radius=3)
+
+        # ── Compact data bars ──
+        dy = pfy + 16
+        dh = 5
         pad = 6
         hw = W // 2 - pad * 2 - 2
 
-        # Fuel + Hybrid Battery (most important for hybrid)
-        fuel = vd.get("FUEL_LEVEL", 0)
-        fc = GREEN if fuel > 20 else AMBER if fuel > 10 else RED
-        self.draw_hbar(pad, by + 16, hw, bh, fuel / 100.0, fc, "FUEL", f"{fuel:.0f}%")
-
-        hv_bat = vd.get("HYBRID_BATTERY_REMAINING", 0)
-        bc = GREEN if hv_bat > 30 else AMBER if hv_bat > 15 else RED
-        self.draw_hbar(W//2 + 2 + pad, by + 16, hw, bh,
-                       hv_bat / 100.0, bc, "HV BATT", f"{hv_bat:.0f}%")
-
-        # Coolant + Load
-        cool = vd.get("COOLANT_TEMP", 0)
         cc = t["primary"] if cool < 100 else AMBER if cool < 110 else RED
-        self.draw_hbar(pad, by + 42, hw, bh, min(cool/130, 1), cc, "COOLANT", f"{cool:.0f}C")
+        self.draw_hbar(pad, dy + 10, hw, dh, min(cool/130, 1), cc, "COOL", f"{cool:.0f}C")
+        self.draw_hbar(W//2+2+pad, dy + 10, hw, dh, min(rpm/7000, 1),
+                       t["primary_dim"] if rpm < 3000 else AMBER, "RPM", f"{int(rpm)}")
 
-        load = vd.get("ENGINE_LOAD", 0)
         lc = t["primary"] if load < 70 else AMBER if load < 90 else RED
-        self.draw_hbar(W//2 + 2 + pad, by + 42, hw, bh, load/100, lc, "LOAD", f"{load:.0f}%")
+        self.draw_hbar(pad, dy + 28, hw, dh, load/100, lc, "LOAD", f"{load:.0f}%")
+        self.draw_hbar(W//2+2+pad, dy + 28, hw, dh, throttle/100,
+                       t["accent"], "THRTL", f"{throttle:.0f}%")
 
-        # Lower: music or time
-        ly = by + 60
+        # ── Range + music ──
+        ry = dy + 44
+        total = fuel_mi + ev_mi
+        rt = self.font_sm.render(f"Range: {total}mi", True, t["text_bright"])
+        s.blit(rt, (pad, ry))
+        it_t = self.font_xs.render(f"Air:{intake:.0f}C", True, t["text_dim"])
+        s.blit(it_t, (W - it_t.get_width() - pad, ry + 2))
+
+        ly = ry + 16
         pygame.draw.line(s, t["border_lite"], (4, ly), (W - 4, ly))
         self.draw_lower_section(ly + 3, music, vd)
 
@@ -616,10 +685,12 @@ class CarHUD:
 
         # Network
         nc = t["text_dim"]
+        net_ssid = ""
         try:
             with open("/tmp/car-hud-wifi-data") as f:
                 wd = json.load(f)
                 ws = wd.get("state", "")
+                net_ssid = wd.get("ssid", "")
                 if ws == "connected":
                     nc = t["primary"]
                 elif ws == "connecting":
@@ -646,28 +717,44 @@ class CarHUD:
         elif has_out:
             ac = AMBER
 
-        # CAM status — read dashcam data
+        # CAM status — recording=red pulse, service running=primary, off=dim
         cam_c = t["text_dim"]
+        cam_recording = False
         try:
             with open("/tmp/car-hud-dashcam-data") as f:
                 cd = json.load(f)
-                if cd.get("recording") and time.time() - cd.get("timestamp", 0) < 30:
-                    cam_c = t["primary"]
-                elif time.time() - cd.get("timestamp", 0) < 30:
-                    cam_c = AMBER
+                if time.time() - cd.get("timestamp", 0) < 60:
+                    if cd.get("recording"):
+                        cam_recording = True
+                        cam_c = RED  # recording = red
+                    else:
+                        cam_c = t["primary"]  # service up, not recording
         except Exception:
             pass
+        # Also check if camera device exists
+        if cam_c == t["text_dim"] and os.path.exists("/dev/video0"):
+            cam_c = AMBER  # camera present but service not writing
 
         modules = [("AUD", ac), ("OBD", oc), ("MUS", mc),
                    ("NET", nc), ("CAM", cam_c), ("LUX", t["text_dim"])]
         mw = (W - 12) // len(modules)
         my = sy + 3
 
+        net_idx = -1
         for i, (name, color) in enumerate(modules):
             mx = 6 + i * mw
             pygame.draw.circle(s, color, (mx + mw // 2, my + 3), 3)
             mt = self.font_xs.render(name, True, color)
             s.blit(mt, (mx + (mw - mt.get_width()) // 2, my + 9))
+            if name == "NET":
+                net_idx = i
+
+        # Show current SSID above NET indicator
+        if net_ssid and net_idx >= 0:
+            ssid_short = net_ssid[:8]
+            st = self.font_xs.render(ssid_short, True, nc)
+            nx = 6 + net_idx * mw + (mw - st.get_width()) // 2
+            s.blit(st, (nx, sy - st.get_height() - 1))
 
         # Split mic bar: left half = USB mic, right half = webcam mic
         self._read_voice_signal()

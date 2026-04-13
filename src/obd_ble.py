@@ -18,15 +18,25 @@ OBD_NAMES = ["ios-vlink", "android-vlink", "vlink", "icar"]
 CHAR_UUID = "bef8d6c9-9c21-4c9e-b632-bd58c1009f9f"  # read/write/notify
 
 PIDS = {
+    # Critical — read every cycle
     "010C": ("RPM", lambda v: int(v, 16) / 4 if v else 0),
     "010D": ("SPEED", lambda v: int(v, 16) if v else 0),
-    "0105": ("COOLANT_TEMP", lambda v: int(v, 16) - 40 if v else 0),
+    "015B": ("HYBRID_BATTERY_REMAINING", lambda v: int(v, 16) * 100 / 255 if v else 0),
     "0104": ("ENGINE_LOAD", lambda v: int(v, 16) * 100 / 255 if v else 0),
     "0111": ("THROTTLE_POS", lambda v: int(v, 16) * 100 / 255 if v else 0),
+    # Important
     "012F": ("FUEL_LEVEL", lambda v: int(v, 16) * 100 / 255 if v else 0),
-    "015B": ("HYBRID_BATTERY_REMAINING", lambda v: int(v, 16) * 100 / 255 if v else 0),
+    "0105": ("COOLANT_TEMP", lambda v: int(v, 16) - 40 if v else 0),
     "0142": ("CONTROL_MODULE_VOLTAGE", lambda v: int(v, 16) / 1000 if v else 0),
     "010F": ("INTAKE_TEMP", lambda v: int(v, 16) - 40 if v else 0),
+    # Extended — hybrid specific
+    "0143": ("ABSOLUTE_LOAD", lambda v: int(v, 16) * 100 / 255 if v else 0),
+    "010E": ("TIMING_ADVANCE", lambda v: int(v, 16) / 2 - 64 if v else 0),
+    "0110": ("MAF", lambda v: int(v, 16) / 100 if v else 0),  # grams/sec
+    "0133": ("BAROMETRIC_PRESSURE", lambda v: int(v, 16) if v else 0),
+    "013C": ("CATALYST_TEMP_B1S1", lambda v: int(v, 16) / 10 - 40 if v else 0),
+    "0106": ("SHORT_FUEL_TRIM", lambda v: int(v, 16) * 100 / 128 - 100 if v else 0),
+    "0107": ("LONG_FUEL_TRIM", lambda v: int(v, 16) * 100 / 128 - 100 if v else 0),
 }
 
 

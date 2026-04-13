@@ -17,8 +17,9 @@ SIGNAL_FILE = "/tmp/car-hud-dashcam-data"
 VOICE_FILE = "/tmp/car-hud-voice-signal"
 OBD_FILE = "/tmp/car-hud-obd-data"
 LOG_FILE = "/tmp/car-hud-dashcam.log"
-CHUNK_SECONDS = 300
-MAX_CHUNKS = 12
+CHUNK_SECONDS = 300   # 5 min per chunk
+MAX_SIZE_MB = 2048    # 2GB max — rotate oldest when exceeded
+MAX_CHUNKS = 50       # hard cap
 VIDEO_DEV = "/dev/video0"
 
 
@@ -39,11 +40,15 @@ def write_status(recording, chunks=0, size_mb=0, mode="auto"):
 
 def rotate_chunks():
     files = sorted(glob.glob(os.path.join(RECORD_DIR, "chunk_*.mp4")))
-    while len(files) > MAX_CHUNKS:
+    total_mb = get_total_size_mb()
+    while len(files) > MAX_CHUNKS or total_mb > MAX_SIZE_MB:
+        if not files:
+            break
         oldest = files.pop(0)
         try:
+            total_mb -= os.path.getsize(oldest) / (1024 * 1024)
             os.remove(oldest)
-            log(f"Rotated: {os.path.basename(oldest)}")
+            log(f"Rotated: {os.path.basename(oldest)} ({total_mb:.0f}MB remaining)")
         except Exception:
             pass
 
