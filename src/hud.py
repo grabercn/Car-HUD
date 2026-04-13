@@ -1249,11 +1249,12 @@ class CarHUD:
             self.screen.blit(scaled, (0, 0))
         pygame.display.flip()
 
-        # Screenshot on request (for HTTP server) — BMP for speed
+        # Screenshot on request (for HTTP server) — BMP for speed in RAM disk
         try:
-            if os.path.exists("/tmp/car-hud-screenshot-request"):
-                pygame.image.save(self.surf, "/tmp/car-hud-screenshot.bmp")
-                os.remove("/tmp/car-hud-screenshot-request")
+            req_path = "/dev/shm/car-hud-screenshot-request"
+            if os.path.exists(req_path):
+                pygame.image.save(self.surf, "/dev/shm/car-hud-screenshot.bmp")
+                os.remove(req_path)
         except Exception:
             pass
 
@@ -1382,18 +1383,16 @@ class CarHUD:
 
             self.draw_status_strip(obd)
 
-            # Calibration overlay — takes over everything
-            if self.draw_calibration_overlay():
-                self.present()
-                self.clock_t.tick(15)
-                continue
-
-            # Check voice signal for overlays (help, keys, camera)
+            # Check voice signal for overlays (help, keys, camera, save)
             try:
                 with open("/tmp/car-hud-voice-signal") as vs:
                     vsig = json.load(vs)
                     if time.time() - vsig.get("time", 0) < 10:
-                        if vsig.get("action") == "show" and vsig.get("target") == "help":
+                        if vsig.get("action") == "save" and vsig.get("target") == "dashcam":
+                            # Draw 'CLIP SAVED' overlay
+                            self.draw_glow_text("CLIP SAVED", self.font_lg, GREEN, 
+                                               ((self.width - self.font_lg.size("CLIP SAVED")[0]) // 2, 40))
+                        elif vsig.get("action") == "show" and vsig.get("target") == "help":
                             self.draw_help_overlay()
                             self.present()
                             self.clock_t.tick(30)

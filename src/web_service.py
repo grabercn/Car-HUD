@@ -18,7 +18,7 @@ from socketserver import ThreadingMixIn
 from urllib.parse import unquote
 
 PORT = 8080
-SCREENSHOT_PATH = "/tmp/car-hud-screenshot.bmp"
+SCREENSHOT_PATH = "/dev/shm/car-hud-screenshot.bmp"
 DASHCAM_DIR = "/home/chrismslist/car-hud/dashcam"
 DASHCAM_STATUS = "/tmp/car-hud-dashcam-data"
 
@@ -42,6 +42,7 @@ def stop_streaming_session():
             STREAM_COUNT = 0
             subprocess.run(["sudo", "systemctl", "start", "car-hud-dashcam"],
                            capture_output=True, timeout=5)
+
 
 def find_cameras():
     """Find all valid USB video capture devices."""
@@ -69,10 +70,11 @@ def find_cameras():
 
 def take_screenshot():
     try:
-        with open("/tmp/car-hud-screenshot-request", "w") as f:
+        with open("/dev/shm/car-hud-screenshot-request", "w") as f:
             f.write(str(time.time()))
     except Exception:
         pass
+
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -187,6 +189,7 @@ nav a{{color:#0af;text-decoration:none}}
         self.send_header("Content-Type", "text/html")
         self.end_headers()
 
+        # Normal chunks
         files = sorted(glob.glob(os.path.join(DASHCAM_DIR, "chunk_*.mp4")), reverse=True)
         rows = ""
         total_mb = 0
@@ -194,11 +197,7 @@ nav a{{color:#0af;text-decoration:none}}
             name = os.path.basename(f)
             size = os.path.getsize(f)
             total_mb += size / (1024*1024)
-            # Parse: chunk_YYYYMMDD_HHMMSS_camX.mp4
-            cam_id = "0"
-            if "_cam" in name:
-                cam_id = name.split("_cam")[1].split(".")[0]
-            
+            cam_id = name.split("_cam")[1].split(".")[0] if "_cam" in name else "0"
             ts_part = name.replace("chunk_", "").split("_cam")[0]
             try:
                 date = f"{ts_part[:4]}-{ts_part[4:6]}-{ts_part[6:8]}"
@@ -206,12 +205,32 @@ nav a{{color:#0af;text-decoration:none}}
                 display = f"{date} {t}"
             except Exception:
                 display = name
-                
             size_mb = size / (1024*1024)
             cam_label = f'<span style="color:{"#0af" if cam_id=="0" else "#f0a"}">Cam {cam_id}</span>'
             rows += f'<tr><td>{display}</td><td>{cam_label}</td><td>{size_mb:.1f} MB</td>'
             rows += f'<td><a href="/dashcam/video/{name}">Play</a> | '
             rows += f'<a href="/dashcam/video/{name}" download>Download</a></td></tr>'
+
+        # Saved clips
+        saved_dir = os.path.join(DASHCAM_DIR, "saved")
+        saved_files = sorted(glob.glob(os.path.join(saved_dir, "*.mp4")), reverse=True)
+        saved_rows = ""
+        for f in saved_files:
+            name = os.path.basename(f)
+            size = os.path.getsize(f)
+            cam_id = name.split("_cam")[1].split(".")[0] if "_cam" in name else "0"
+            ts_part = name.replace("chunk_", "").split("_cam")[0]
+            try:
+                date = f"{ts_part[:4]}-{ts_part[4:6]}-{ts_part[6:8]}"
+                t = f"{ts_part[9:11]}:{ts_part[11:13]}:{ts_part[13:15]}"
+                display = f"{date} {t}"
+            except Exception:
+                display = name
+            size_mb = size / (1024*1024)
+            cam_label = f'<span style="color:{"#0af" if cam_id=="0" else "#f0a"}">Cam {cam_id}</span>'
+            saved_rows += f'<tr style="background:rgba(0,255,100,0.05)"><td>{display}</td><td>{cam_label}</td><td>{size_mb:.1f} MB</td>'
+            saved_rows += f'<td><a href="/dashcam/video/saved/{name}">Play</a> | '
+            saved_rows += f'<a href="/dashcam/video/saved/{name}" download>Download</a></td></tr>'
 
         html = f"""<!DOCTYPE html>
 <html><head><title>Dashcam Recordings</title>
@@ -221,19 +240,27 @@ nav a{{color:#0af;text-decoration:none}}
 body{{background:#0a0a12;color:#ccc;font-family:monospace;padding:40px 12px 12px}}
 nav{{position:fixed;top:0;left:0;width:100%;background:rgba(0,0,0,0.9);padding:6px 12px;display:flex;gap:16px;z-index:10;font-size:12px}}
 nav a{{color:#0af;text-decoration:none}}
-h2{{color:#0af;margin:8px 0}}
+h2{{color:#0af;margin:16px 0 8px}}
 .stats{{color:#567;font-size:11px;margin-bottom:12px}}
-table{{width:100%;border-collapse:collapse}}
+table{{width:100%;border-collapse:collapse;margin-bottom:20px}}
 th{{text-align:left;color:#0af;border-bottom:1px solid #234;padding:6px 4px;font-size:11px}}
 td{{padding:6px 4px;border-bottom:1px solid #111;font-size:12px}}
 a{{color:#0af}}
+.saved-hdr{{color:#0f6}}
 </style></head><body>
 <nav>
 <a href="/">HUD</a>
 <a href="/camera">Cameras</a>
 <a href="/dashcam">Recordings</a>
 </nav>
-<h2>Dashcam Recordings</h2>
+
+<h2 class="saved-hdr">Saved Clips</h2>
+<table>
+<tr><th>Date/Time</th><th>Camera</th><th>Size</th><th>Actions</th></tr>
+{saved_rows or '<tr><td colspan="4" style="color:#444">No saved clips</td></tr>'}
+</table>
+
+<h2>Recent Footage</h2>
 <div class="stats">{len(files)} clips | {total_mb:.0f} MB total</div>
 <table>
 <tr><th>Date/Time</th><th>Camera</th><th>Size</th><th>Actions</th></tr>
@@ -243,8 +270,15 @@ a{{color:#0af}}
         self.wfile.write(html.encode())
 
     def serve_dashcam_video(self, path):
-        filename = unquote(path.split("/dashcam/video/")[1])
-        filepath = os.path.join(DASHCAM_DIR, filename)
+        # Handle saved subfolder
+        is_saved = "/dashcam/video/saved/" in path
+        if is_saved:
+            filename = unquote(path.split("/dashcam/video/saved/")[1])
+            filepath = os.path.join(DASHCAM_DIR, "saved", filename)
+        else:
+            filename = unquote(path.split("/dashcam/video/")[1])
+            filepath = os.path.join(DASHCAM_DIR, filename)
+
         if not os.path.exists(filepath) or ".." in filename:
             self.send_response(404)
             self.end_headers()

@@ -183,6 +183,13 @@ INTENTS = {
                      "show other camera", "change camera", "swap camera",
                      "second camera", "show me other camera"],
     },
+    "save_clip": {
+        "action": "save", "target": "dashcam",
+        "keywords": {"save": 4, "keep": 3, "clip": 2, "record": 1, "dashcam": 1,
+                     "footage": 2, "video": 1, "that": 2},
+        "phrases": ["save clip", "keep that", "save dashcam", "save that video",
+                     "save footage", "keep this clip", "remember that"],
+    },
     "calibrate": {
         "action": "system", "target": "calibrate",
         "keywords": {"calibrate": 3, "calibration": 3, "tune": 2, "tuning": 2,

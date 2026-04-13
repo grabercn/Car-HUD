@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Honda Accord Dashcam Service
 Records from webcam in 5-min chunks. Auto-records when driving (OBD speed > 0).
-Voice commands: start/stop recording, preview camera.
+Voice commands: start/stop recording, save clip.
 Writes status to /tmp/car-hud-dashcam-data.
 """
 
@@ -12,8 +12,10 @@ import time
 import subprocess
 import glob
 import threading
+import shutil
 
 RECORD_DIR = "/home/chrismslist/car-hud/dashcam"
+SAVED_DIR = "/home/chrismslist/car-hud/dashcam/saved"
 SIGNAL_FILE = "/tmp/car-hud-dashcam-data"
 VOICE_FILE = "/tmp/car-hud-voice-signal"
 OBD_FILE = "/tmp/car-hud-obd-data"
@@ -34,12 +36,12 @@ def log(msg):
         pass
 
 
-def write_status(recording, chunks=0, size_mb=0, mode="auto", cam_count=0):
+def write_status(recording, chunks=0, size_mb=0, mode="auto", cam_count=0, saved_count=0):
     try:
         with open(SIGNAL_FILE, "w") as f:
             json.dump({"recording": recording, "chunks": chunks,
                        "size_mb": round(size_mb, 1), "mode": mode,
-                       "cam_count": cam_count,
+                       "cam_count": cam_count, "saved_count": saved_count,
                        "timestamp": time.time()}, f)
     except Exception:
         pass
@@ -58,10 +60,8 @@ def find_cameras():
                 current_bus = line.lower()
             elif line.strip().startswith("/dev/video"):
                 dev = line.strip()
-                # Skip internal Pi ISP/Codec/Unicam nodes
                 if "bcm2835" in current_bus or "unicam" in current_bus:
                     continue
-                # Real capture devices have 0x04200001 caps (Capture + Streaming)
                 res = subprocess.run(["v4l2-ctl", "--device", dev, "--all"], 
                                       capture_output=True, text=True, timeout=2)
                 if "Device Caps      : 0x04200001" in res.stdout:
@@ -97,8 +97,8 @@ def record_from_cam(cam_dev, output, duration):
     except Exception as e:
         log(f"Error recording {cam_dev}: {e}")
 
+
 def rotate_chunks():
-    # ... (unchanged)
     files = sorted(glob.glob(os.path.join(RECORD_DIR, "chunk_*.mp4")))
     total_mb = get_total_size_mb()
     while len(files) > MAX_CHUNKS or total_mb > MAX_SIZE_MB:
@@ -133,6 +133,34 @@ def is_driving():
     return False
 
 
+def handle_save_request():
+    """Move current and previous chunks to saved folder."""
+    os.makedirs(SAVED_DIR, exist_ok=True)
+    # Find all chunks in RECORD_DIR
+    files = sorted(glob.glob(os.path.join(RECORD_DIR, "chunk_*.mp4")), reverse=True)
+    if not files:
+        log("Save: No files found to save")
+        return
+    
+    # Save the last 4 files (assuming 2 cameras, current + previous timestamps)
+    to_save = files[:4]
+    
+    saved = 0
+    for f in to_save:
+        name = os.path.basename(f)
+        dest = os.path.join(SAVED_DIR, name)
+        if os.path.exists(dest):
+            continue
+        try:
+            # Copy instead of move because ffmpeg might still be writing to current ones
+            shutil.copy2(f, dest)
+            saved += 1
+        except Exception as e:
+            log(f"Save error for {name}: {e}")
+    
+    log(f"Saved {saved} clips to {SAVED_DIR}")
+
+
 def check_voice_command():
     """Check for dashcam voice commands."""
     try:
@@ -144,8 +172,8 @@ def check_voice_command():
             target = data.get("target", "")
             raw = data.get("raw", "").lower()
 
-            if action == "show" and target == "camera":
-                return "preview"
+            if action == "save" and target == "dashcam":
+                return "save"
             if "start" in raw and ("record" in raw or "camera" in raw or "dashcam" in raw):
                 return "start"
             if "stop" in raw and ("record" in raw or "camera" in raw or "dashcam" in raw):
@@ -157,6 +185,7 @@ def check_voice_command():
 
 def main():
     os.makedirs(RECORD_DIR, exist_ok=True)
+    os.makedirs(SAVED_DIR, exist_ok=True)
     log("Dashcam service starting...")
 
     manual_override = None  # None=auto, "on"=force record, "off"=force stop
@@ -165,7 +194,7 @@ def main():
     while True:
         # Check voice commands
         now = time.time()
-        if now - last_voice_check > 2:
+        if now - last_voice_check > 1.5:
             last_voice_check = now
             cmd = check_voice_command()
             if cmd == "start":
@@ -174,6 +203,8 @@ def main():
             elif cmd == "stop":
                 manual_override = "off"
                 log("Voice: manual recording OFF")
+            elif cmd == "save":
+                handle_save_request()
 
         # Decide whether to record
         driving = is_driving()
@@ -206,17 +237,18 @@ def main():
 
         cams = find_cameras()
         cam_count = len(cams)
+        saved_count = len(glob.glob(os.path.join(SAVED_DIR, "*.mp4")))
 
         if not should_record or cam_count == 0:
             chunks = len(glob.glob(os.path.join(RECORD_DIR, "chunk_*.mp4")))
-            write_status(False, chunks, get_total_size_mb(), mode, cam_count)
+            write_status(False, chunks, get_total_size_mb(), mode, cam_count, saved_count)
             time.sleep(5)
             continue
 
         # Record a chunk from each camera in parallel
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         chunks = len(glob.glob(os.path.join(RECORD_DIR, "chunk_*.mp4")))
-        write_status(True, chunks, get_total_size_mb(), mode, cam_count)
+        write_status(True, chunks, get_total_size_mb(), mode, cam_count, saved_count)
         
         log(f"Recording {cam_count} cam(s) for {CHUNK_SECONDS}s ({mode})")
         

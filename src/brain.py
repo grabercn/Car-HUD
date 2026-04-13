@@ -160,6 +160,7 @@ Available actions:
 - show: camera, music, map, system, home, vehicle, help
 - theme: blue, red, green, amber, day, night, auto
 - music: play, pause, next, previous, stop
+- save: dashcam
 - brightness: up, down
 - wifi: scan, connect, disconnect
 - pair/unpair: phone
@@ -319,6 +320,7 @@ def process_command(text):
                 ("music", "pause"):  "Paused",
                 ("music", "next"):   "Next track",
                 ("music", "previous"): "Previous track",
+                ("save", "dashcam"):  "Clip saved",
             }
             reply = RESPONSES.get((action, target), f"{action} {target}")
             return action, target, reply, "learned"
