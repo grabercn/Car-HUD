@@ -6,7 +6,7 @@ Wants=bluetooth.service
 [Service]
 Type=simple
 User=chrismslist
-ExecStart=/usr/bin/python3 -W ignore /home/chrismslist/car-hud/obd_ble.py
+ExecStart=/usr/bin/python3 -W ignore /home/chrismslist/car-hud/obd_service.py
 Restart=on-failure
 RestartSec=15
 StandardOutput=journal

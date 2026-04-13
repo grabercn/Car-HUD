@@ -1,52 +1,40 @@
 #!/usr/bin/env python3
-"""Honda Accord OBD-II Service
-Connects to Bluetooth OBD-II adapter, reads vehicle data,
-writes to signal file for HUD to display.
-Auto-reconnects if adapter disconnects.
-
-For 2014 Honda Accord Hybrid.
+"""OBD-II via Bluetooth LE — for Vgate iCar Pro 2S.
+Connects via BLE, sends ELM327 commands, writes data to /tmp/car-hud-obd-data.
 """
 
-import os
-import sys
+import asyncio
 import json
 import time
-import subprocess
+import os
+import sys
+from bleak import BleakClient, BleakScanner
 
 SIGNAL_FILE = "/tmp/car-hud-obd-data"
 LOG_FILE = "/tmp/car-hud-obd.log"
 
-# Known Bluetooth OBD-II adapter names/MACs
-OBD_BT_NAMES = ["obd", "elm", "elm327", "vlink", "obdii", "car scanner", "veepeak", "v-link", "scan", "android-vlink", "icar"]
-OBD_RFCOMM_DEV = "/dev/rfcomm0"
+# Vgate iCar Pro 2S BLE
+OBD_NAMES = ["ios-vlink", "android-vlink", "vlink", "icar"]
+CHAR_UUID = "bef8d6c9-9c21-4c9e-b632-bd58c1009f9f"  # read/write/notify
 
-# Key PIDs to monitor continuously
-CRITICAL_PIDS = [
-    "STATUS",                # MIL (check engine) status
-    "COOLANT_TEMP",          # Engine coolant temperature
-    "ENGINE_LOAD",           # Calculated engine load
-    "HYBRID_BATTERY_REMAINING",  # Hybrid battery SOC
+# PID configuration: (Name, parser_func, data_bytes)
+PIDS = {
+    "010C": ("RPM", lambda v: int(v, 16) / 4 if v else 0, 2),
+    "010D": ("SPEED", lambda v: int(v, 16) if v else 0, 1),
+    "0104": ("ENGINE_LOAD", lambda v: int(v, 16) * 100 / 255 if v else 0, 1),
+    "0111": ("THROTTLE_POS", lambda v: int(v, 16) * 100 / 255 if v else 0, 1),
+    "015B": ("HYBRID_BATTERY_REMAINING", lambda v: int(v, 16) * 100 / 255 if v else 0, 1),
+    "012F": ("FUEL_LEVEL", lambda v: int(v, 16) * 100 / 255 if v else 0, 1),
+    "0105": ("COOLANT_TEMP", lambda v: int(v, 16) - 40 if v else 0, 1),
+    "0142": ("CONTROL_MODULE_VOLTAGE", lambda v: int(v, 16) / 1000 if v else 0, 2),
+    "010F": ("INTAKE_TEMP", lambda v: int(v, 16) - 40 if v else 0, 1),
+}
+
+# Group PIDs into one command for speed (max 6 per command on most ELM327)
+PID_GROUPS = [
+    ["010C", "010D", "0104", "0111"], # Fast group (Engine/Speed)
+    ["015B", "012F", "0105", "0142", "010F"] # Slower group (Levels/Temps)
 ]
-
-STANDARD_PIDS = [
-    "RPM",                   # Engine RPM
-    "SPEED",                 # Vehicle speed
-    "THROTTLE_POS",          # Throttle position
-    "FUEL_LEVEL",            # Fuel level
-    "INTAKE_TEMP",           # Intake air temperature
-    "RUN_TIME",              # Engine run time
-    "CONTROL_MODULE_VOLTAGE",# Battery voltage
-    "CATALYST_TEMP_B1S1",    # Catalytic converter temp
-    "TIMING_ADVANCE",        # Timing advance
-    "MAF",                   # Mass air flow
-    "FUEL_TYPE",             # Fuel type (hybrid detection)
-    "ABSOLUTE_LOAD",         # Absolute engine load
-    "BAROMETRIC_PRESSURE",   # Barometric pressure
-    "DISTANCE_SINCE_DTC_CLEAR", # Distance since last clear
-]
-
-# DTCs (Diagnostic Trouble Codes) — check periodically
-DTC_CHECK_INTERVAL = 30  # seconds
 
 
 def log(msg):
@@ -56,212 +44,188 @@ def log(msg):
     try:
         with open(LOG_FILE, "a") as f:
             f.write(line + "\n")
-        if os.path.getsize(LOG_FILE) > 50000:
-            with open(LOG_FILE, "r") as f:
-                lines = f.readlines()[-100:]
-            with open(LOG_FILE, "w") as f:
-                f.writelines(lines)
     except Exception:
         pass
 
 
-def write_obd_data(data):
-    """Write OBD data to signal file for HUD."""
+def write_obd(data):
     data["timestamp"] = time.time()
     try:
         with open(SIGNAL_FILE, "w") as f:
             json.dump(data, f)
-    except Exception as e:
-        log(f"Signal write error: {e}")
+    except Exception:
+        pass
 
 
-def find_obd_adapter():
-    """Scan for Bluetooth OBD-II adapter."""
-    try:
-        result = subprocess.run(
-            ["bluetoothctl", "devices"],
-            capture_output=True, text=True, timeout=5
-        )
-        for line in result.stdout.strip().split("\n"):
-            if not line.strip():
-                continue
-            parts = line.split(" ", 2)
-            if len(parts) >= 3:
-                mac = parts[1]
-                name = parts[2].lower()
-                for obd_name in OBD_BT_NAMES:
-                    if obd_name in name:
-                        log(f"Found OBD adapter: {parts[2]} ({mac})")
-                        return mac, parts[2]
-    except Exception as e:
-        log(f"BT scan error: {e}")
-    return None, None
+class BleOBD:
+    def __init__(self):
+        self.response = ""
+        self.response_ready = asyncio.Event()
 
+    def on_notify(self, sender, data):
+        text = data.decode("ascii", errors="ignore")
+        self.response += text
+        if ">" in text:
+            self.response_ready.set()
 
-def bind_rfcomm(mac):
-    """Bind Bluetooth MAC to /dev/rfcomm0."""
-    try:
-        subprocess.run(["sudo", "rfcomm", "release", "0"], timeout=5,
-                       capture_output=True)
-        time.sleep(0.5)
-        result = subprocess.run(
-            ["sudo", "rfcomm", "bind", "0", mac],
-            capture_output=True, text=True, timeout=10
-        )
-        if result.returncode == 0:
-            log(f"Bound {mac} to {OBD_RFCOMM_DEV}")
-            return True
-        else:
-            log(f"rfcomm bind failed: {result.stderr}")
-    except Exception as e:
-        log(f"rfcomm error: {e}")
-    return False
-
-
-def main():
-    import obd
-
-    log("OBD-II service starting...")
-
-    # Write initial status
-    write_obd_data({
-        "connected": False,
-        "status": "searching",
-        "dtcs": [],
-        "warnings": [],
-        "data": {}
-    })
-
-    connection = None
-    last_dtc_check = 0
-    obd_data = {
-        "connected": False,
-        "status": "searching",
-        "dtcs": [],
-        "warnings": [],
-        "data": {},
-        "adapter": ""
-    }
-
-    while True:
-        # --- Connection phase ---
-        if connection is None or connection.status() != obd.OBDStatus.CAR_CONNECTED:
-            obd_data["connected"] = False
-            obd_data["status"] = "searching"
-            write_obd_data(obd_data)
-
-            # Try to find and connect to OBD adapter
-            mac, name = find_obd_adapter()
-            if mac:
-                obd_data["adapter"] = name
-                obd_data["status"] = "connecting"
-                write_obd_data(obd_data)
-
-                if bind_rfcomm(mac):
-                    time.sleep(2)
-                    try:
-                        connection = obd.OBD(OBD_RFCOMM_DEV, baudrate=38400,
-                                             fast=False, timeout=10)
-                        if connection.status() == obd.OBDStatus.CAR_CONNECTED:
-                            log(f"Connected to vehicle via {name}")
-                            obd_data["connected"] = True
-                            obd_data["status"] = "connected"
-                            obd_data["protocol"] = str(connection.protocol_name())
-                            write_obd_data(obd_data)
-                        else:
-                            log(f"OBD status: {connection.status()}")
-                            obd_data["status"] = str(connection.status())
-                            write_obd_data(obd_data)
-                            connection = None
-                    except Exception as e:
-                        log(f"OBD connect error: {e}")
-                        obd_data["status"] = "error"
-                        write_obd_data(obd_data)
-                        connection = None
-            else:
-                obd_data["status"] = "no adapter"
-
-            write_obd_data(obd_data)
-            time.sleep(10)
-            continue
-
-        # --- Data reading phase ---
+    async def send(self, client, cmd, timeout=5):
+        self.response = ""
+        self.response_ready.clear()
+        await client.write_gatt_char(CHAR_UUID, f"{cmd}\r".encode())
         try:
-            data = {}
-            warnings = []
+            await asyncio.wait_for(self.response_ready.wait(), timeout)
+        except asyncio.TimeoutError:
+            pass
+        return self.response.replace(">", "").strip()
 
-            # Read critical PIDs
-            for pid_name in CRITICAL_PIDS:
-                try:
-                    cmd = getattr(obd.commands, pid_name, None)
-                    if cmd and connection.supports(cmd):
-                        resp = connection.query(cmd)
-                        if not resp.is_null():
-                            val = resp.value
-                            if hasattr(val, 'magnitude'):
-                                val = val.magnitude
-                            data[pid_name] = val
+    async def find_adapter(self):
+        log("Scanning BLE for OBD adapter...")
+        devices = await BleakScanner.discover(timeout=10, return_adv=True)
+        for addr, (dev, adv) in devices.items():
+            name = (dev.name or "").lower()
+            for obd_name in OBD_NAMES:
+                if obd_name in name:
+                    log(f"Found: {dev.name} ({addr}) RSSI={adv.rssi}")
+                    return addr
+        return None
 
-                            # Check for warnings
-                            if pid_name == "STATUS" and hasattr(resp.value, 'MIL'):
-                                if resp.value.MIL:
-                                    warnings.append("CHECK ENGINE LIGHT ON")
-                            elif pid_name == "COOLANT_TEMP":
-                                if isinstance(val, (int, float)) and val > 110:
-                                    warnings.append(f"HIGH COOLANT: {val:.0f}C")
-                            elif pid_name == "ENGINE_LOAD":
-                                if isinstance(val, (int, float)) and val > 90:
-                                    warnings.append(f"HIGH LOAD: {val:.0f}%")
-                except Exception:
-                    pass
+    def parse_group_response(self, response, pids):
+        """Parse multi-PID response: '41 0C 1A F8 0D 00' -> {'RPM': ..., 'SPEED': ...}"""
+        results = {}
+        # Clean response: remove spaces, newlines, and headers
+        cleaned = "".join(response.replace("\r", " ").replace("\n", " ").split()).upper()
+        
+        # ELM327 usually echoes back '41 <PID> <DATA>' for each PID in group
+        for pid in pids:
+            pid_num = pid[2:]
+            header = f"41{pid_num}"
+            idx = cleaned.find(header)
+            if idx >= 0:
+                name, parser, n_bytes = PIDS[pid]
+                data_start = idx + len(header)
+                raw = cleaned[data_start : data_start + n_bytes * 2]
+                if len(raw) == n_bytes * 2:
+                    try:
+                        results[name] = parser(raw)
+                    except Exception:
+                        pass
+        return results
 
-            # Read standard PIDs
-            for pid_name in STANDARD_PIDS:
-                try:
-                    cmd = getattr(obd.commands, pid_name, None)
-                    if cmd and connection.supports(cmd):
-                        resp = connection.query(cmd)
-                        if not resp.is_null():
-                            val = resp.value
-                            if hasattr(val, 'magnitude'):
-                                val = val.magnitude
-                            data[pid_name] = val
-                except Exception:
-                    pass
+    async def run(self):
+        write_obd({"connected": False, "status": "scanning", "data": {}, "warnings": [], "dtcs": []})
 
-            # Check DTCs periodically
-            now = time.time()
-            if now - last_dtc_check > DTC_CHECK_INTERVAL:
-                last_dtc_check = now
-                try:
-                    dtc_resp = connection.query(obd.commands.GET_DTC)
-                    if not dtc_resp.is_null() and dtc_resp.value:
-                        dtcs = [(code, desc) for code, desc in dtc_resp.value]
-                        obd_data["dtcs"] = dtcs
-                        if dtcs:
-                            warnings.append(f"{len(dtcs)} DTC(s) ACTIVE")
-                            for code, desc in dtcs[:3]:
-                                log(f"DTC: {code} - {desc}")
-                    else:
-                        obd_data["dtcs"] = []
-                except Exception:
-                    pass
+        while True:
+            addr = await self.find_adapter()
+            if not addr:
+                write_obd({"connected": False, "status": "no adapter", "data": {}, "warnings": [], "dtcs": []})
+                await asyncio.sleep(10)
+                continue
 
-            obd_data["data"] = data
-            obd_data["warnings"] = warnings
-            obd_data["connected"] = True
-            obd_data["status"] = "connected"
-            write_obd_data(obd_data)
+            try:
+                async with BleakClient(addr, timeout=15) as client:
+                    if not client.is_connected:
+                        continue
 
-        except Exception as e:
-            log(f"Read error: {e}")
-            obd_data["connected"] = False
-            obd_data["status"] = "disconnected"
-            write_obd_data(obd_data)
-            connection = None
+                    await client.start_notify(CHAR_UUID, self.on_notify)
+                    log("BLE connected, initializing ELM327...")
+                    write_obd({"connected": False, "status": "initializing", "data": {}, "warnings": [], "dtcs": []})
 
-        time.sleep(0.5)  # ~2 updates per second
+                    # Init ELM327
+                    await self.send(client, "ATZ", 3)
+                    await self.send(client, "ATE0")
+                    await self.send(client, "ATL0")
+                    await self.send(client, "ATS0")
+                    await self.send(client, "ATH0")
+                    await self.send(client, "ATAT1") # Adaptive timing ON
+                    resp = await self.send(client, "ATSP0")  # auto protocol
+                    log(f"Protocol: auto")
+
+                    # Trigger protocol detection
+                    resp = await self.send(client, "0100", 10)
+                    log(f"Supported PIDs: {resp[:40]}")
+
+                    if "UNABLE" in resp or "ERROR" in resp:
+                        log("Protocol detection failed — car off?")
+                        write_obd({"connected": False, "status": "car off?", "data": {}, "warnings": [], "dtcs": []})
+                        await asyncio.sleep(10)
+                        continue
+
+                    log("ELM327 ready — reading data")
+                    write_obd({"connected": True, "status": "connected", "adapter": "Vgate iCar Pro 2S (BLE)",
+                               "data": {}, "warnings": [], "dtcs": []})
+
+                    # Main read loop
+                    data = {}
+                    last_dtc_check = 0
+                    
+                    while client.is_connected:
+                        warnings = []
+                        
+                        # Read PID groups
+                        for group in PID_GROUPS:
+                            cmd = "".join(group)
+                            resp = await self.send(client, cmd, 3)
+                            
+                            if "NO DATA" in resp or "ERROR" in resp or not resp:
+                                # Fallback to sequential if grouped fails
+                                for pid in group:
+                                    resp = await self.send(client, pid, 2)
+                                    parsed = self.parse_group_response(resp, [pid])
+                                    data.update(parsed)
+                            else:
+                                parsed = self.parse_group_response(resp, group)
+                                data.update(parsed)
+
+                        # Threshold checks
+                        cool = data.get("COOLANT_TEMP", 0)
+                        if cool > 105: warnings.append(f"HOT COOLANT {cool:.0f}C")
+                        hv = data.get("HYBRID_BATTERY_REMAINING", 0)
+                        if hv < 15: warnings.append(f"LOW HV BATT {hv:.0f}%")
+                        volts = data.get("CONTROL_MODULE_VOLTAGE", 0)
+                        if volts < 11.5: warnings.append(f"LOW VOLTS {volts:.1f}V")
+
+                        # Periodic DTC check (every 60s)
+                        dtcs = []
+                        if time.time() - last_dtc_check > 60:
+                            last_dtc_check = time.time()
+                            resp = await self.send(client, "03", 5)
+                            if resp and "43" in resp:
+                                # 43 01 33 -> P0133
+                                try:
+                                    raw = "".join(resp.split()).upper()
+                                    if len(raw) >= 6:
+                                        code = raw[2:6]
+                                        dtcs.append(f"P{code}")
+                                except Exception: pass
+
+                        write_obd({
+                            "connected": True,
+                            "status": "connected",
+                            "adapter": "Vgate iCar Pro 2S (BLE)",
+                            "data": data,
+                            "warnings": warnings,
+                            "dtcs": dtcs,
+                            "timestamp": time.time()
+                        })
+
+                        await asyncio.sleep(0.1) # Fast loop
+
+            except Exception as e:
+                log(f"BLE error: {e}")
+                write_obd({"connected": False, "status": "disconnected", "data": {}, "warnings": [], "dtcs": []})
+                await asyncio.sleep(5)
+
+            except Exception as e:
+                log(f"BLE error: {e}")
+                write_obd({"connected": False, "status": "disconnected", "data": {}, "warnings": [], "dtcs": []})
+                await asyncio.sleep(5)
+
+
+async def main():
+    log("OBD-II BLE service starting...")
+    obd = BleOBD()
+    await obd.run()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

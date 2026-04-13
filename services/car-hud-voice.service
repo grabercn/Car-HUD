@@ -6,7 +6,7 @@ Wants=car-hud.service
 [Service]
 Type=simple
 User=chrismslist
-ExecStart=/usr/bin/python3 -W ignore /home/chrismslist/car-hud/voice.py
+ExecStart=/usr/bin/python3 -W ignore /home/chrismslist/car-hud/voice_service.py
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
