@@ -51,6 +51,7 @@ git clone --depth 1 "$REPO_URL" Car-HUD-update 2>/dev/null
 if [ ! -d /tmp/Car-HUD-update/src ]; then
     log "Download failed"
     write_status "failed" "Download failed" 0
+    aplay -q /home/chrismslist/northstar/chime_update_err.wav 2>/dev/null || true
     exit 1
 fi
 
@@ -87,4 +88,5 @@ done
 rm -rf /tmp/Car-HUD-update
 
 write_status "done" "Updated to $REMOTE_HASH" 100
+aplay -q /home/chrismslist/northstar/chime_update_ok.wav 2>/dev/null || true
 log "Update complete: $REMOTE_HASH"

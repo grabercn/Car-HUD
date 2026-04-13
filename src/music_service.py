@@ -273,11 +273,22 @@ def check_voice_commands():
 
 def main():
     log("Music service starting...")
+    # Set friendly name and discoverable
+    bt_cmd("system-alias Honda-HUD")
     bt_cmd("power on")
     bt_cmd("pairable on")
+    bt_cmd("discoverable on")
+    
+    # Class 0x200404: Audio/Video, Wearable Headset/Speaker
+    # This helps phones recognize it as a media device
+    try:
+        subprocess.run(["hciconfig", "hci0", "class", "0x200404"], 
+                       capture_output=True, timeout=2)
+    except Exception: pass
 
     write_music_data({"playing": False, "paired": False})
 
+    last_reconnect = 0
     while True:
         # Check voice commands for pairing and media control
         cmd = check_voice_commands()
@@ -293,8 +304,7 @@ def main():
         elif cmd and cmd.startswith("media:"):
             target = cmd.split(":")[1]
             media_control(target)
-            time.sleep(0.5) # give DBus a moment to update
-            # fall through to update metadata immediately
+            time.sleep(0.5)
 
         # Check if we have a paired phone
         mac, name = get_paired_phone()
@@ -313,14 +323,16 @@ def main():
         except Exception:
             pass
 
-        if not connected:
+        if not connected and time.time() - last_reconnect > 30:
+            last_reconnect = time.time()
+            log(f"Attempting reconnection to {name}...")
+            bt_cmd(f"trust {mac}")
             bt_cmd(f"connect {mac}")
-            time.sleep(3)
+            time.sleep(5)
             try:
                 info = bt_cmd(f"info {mac}")
                 connected = "Connected: yes" in info
-            except Exception:
-                pass
+            except Exception: pass
 
         if connected:
             # Read media metadata

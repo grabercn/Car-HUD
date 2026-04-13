@@ -105,6 +105,10 @@ def main():
 
     pygame.mouse.set_visible(False)
 
+    # Play startup chime
+    subprocess.Popen(["aplay", "-q", "/home/chrismslist/northstar/chime_startup.wav"],
+                     stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+
     # Load splash image
     splash_path = "/home/chrismslist/northstar/splash.png"
     try:
