@@ -46,17 +46,28 @@ def write_status(recording, chunks=0, size_mb=0, mode="auto", cam_count=0):
 
 
 def find_cameras():
-    """Find all valid video devices."""
+    """Find all valid USB video capture devices."""
     cams = []
-    for dev in glob.glob("/dev/video*"):
-        try:
-            # Test if it's a real capture device (not metadata)
-            r = subprocess.run(["v4l2-ctl", "--device", dev, "--all"], 
-                               capture_output=True, text=True, timeout=2)
-            if "Video Capture" in r.stdout and "Metadata Capture" not in r.stdout:
-                cams.append(dev)
-        except Exception:
-            pass
+    try:
+        r = subprocess.run(["v4l2-ctl", "--list-devices"], 
+                           capture_output=True, text=True, timeout=5)
+        lines = r.stdout.split("\n")
+        current_bus = ""
+        for line in lines:
+            if ":" in line and not line.startswith("\t"):
+                current_bus = line.lower()
+            elif line.strip().startswith("/dev/video"):
+                dev = line.strip()
+                # Skip internal Pi ISP/Codec/Unicam nodes
+                if "bcm2835" in current_bus or "unicam" in current_bus:
+                    continue
+                # Real capture devices have 0x04200001 caps (Capture + Streaming)
+                res = subprocess.run(["v4l2-ctl", "--device", dev, "--all"], 
+                                      capture_output=True, text=True, timeout=2)
+                if "Device Caps      : 0x04200001" in res.stdout:
+                    cams.append(dev)
+    except Exception:
+        pass
     return sorted(list(set(cams)))
 
 

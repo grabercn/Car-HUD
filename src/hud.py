@@ -354,13 +354,15 @@ class CarHUD:
         except Exception:
             pass
 
-    def draw_arc_gauge(self, cx, cy, radius, thickness, pct, color, bg_color=None):
+    def draw_arc_gauge(self, cx, cy, radius, thickness, pct, color, bg_color=None, 
+                       start=math.pi, end=0):
         s = self.surf
         bg = bg_color or self.t["border"]
-        start_angle = math.pi
-        end_angle = 0
+        start_angle = start
+        end_angle = end
         steps = 50
 
+        # Draw background track
         for i in range(steps):
             t = i / steps
             a1 = start_angle + (end_angle - start_angle) * t
@@ -371,16 +373,16 @@ class CarHUD:
             y2 = cy - radius * math.sin(a2)
             pygame.draw.line(s, bg, (int(x1), int(y1)), (int(x2), int(y2)), thickness)
 
+        # Draw progress arc
         fill_steps = max(1, int(steps * min(pct, 1.0)))
         for i in range(fill_steps):
             t = i / steps
             t2 = (i + 1) / steps
-            if pct > 0.75 and t > 0.75:
-                c = RED
-            elif pct > 0.5 and t > 0.5:
-                c = AMBER
-            else:
-                c = color
+            # Logic for color transitions based on progress
+            if pct > 0.85 and t > 0.85: c = RED
+            elif pct > 0.7 and t > 0.7: c = AMBER
+            else: c = color
+            
             a1 = start_angle + (end_angle - start_angle) * t
             a2 = start_angle + (end_angle - start_angle) * t2
             x1 = cx + radius * math.cos(a1)
@@ -403,19 +405,16 @@ class CarHUD:
             s.blit(vt, (x + w - vt.get_width(), y - vt.get_height() - 1))
 
     def draw_vehicle_page(self, obd, music):
-        """Honda Accord Hybrid instrument cluster style.
-        Central speed, vertical fuel+battery pillars, power flow, compact data.
+        """Honda Accord Hybrid Stock-style Instrument Cluster.
+        Large central speedo, side-mounted charge and fuel clusters.
         """
         W, H = self.width, self.height
         s = self.surf
         t = self.t
-        vd = self.smooth_data  # Use smoothed data for gauges
+        vd = self.smooth_data
         now = datetime.datetime.now()
 
-        # Divider line
-        pygame.draw.line(s, t["primary_dim"], (0, 0), (W, 0), 1)
-
-        # Data extraction from smoothed dict
+        # Data extraction
         rpm = vd.get("RPM", 0)
         speed = vd.get("SPEED", 0) * 0.621371
         load = vd.get("ENGINE_LOAD", 0)
@@ -427,137 +426,106 @@ class CarHUD:
         intake = vd.get("INTAKE_TEMP", 0)
         ev = rpm < 100
 
-        # Warnings and DTCs
+        # Warnings and DTCs (at the very top)
         wy = 0
         all_warnings = (obd.get("warnings") or [])[:]
         for dtc in (obd.get("dtcs") or []):
             all_warnings.append(f"ENGINE CODE: {dtc}")
-            
         for wt in all_warnings[:3]:
             txt = self.font_sm.render(wt, True, RED)
             pygame.draw.rect(s, (25, 5, 5), (0, wy, W, txt.get_height() + 4))
             s.blit(txt, ((W - txt.get_width()) // 2, wy + 2))
             wy += txt.get_height() + 4
 
-        # ── Top strip: time | EV/GAS badge | volts ──
-        ty = 2 + wy
-        s.blit(self.font_md.render(now.strftime("%I:%M"), True, t["text_bright"]), (10, ty))
-        
-        # EV/GAS status badge - bigger and more centered
-        mc = GREEN if ev else t["primary"]
-        badge_w, badge_h = 45, 18
-        pygame.draw.rect(s, mc, (W//2 - badge_w//2, ty, badge_w, badge_h), border_radius=4)
-        ml = self.font_sm.render("EV" if ev else "GAS", True, (0, 0, 0))
-        s.blit(ml, (W//2 - ml.get_width()//2, ty + (badge_h - ml.get_height())//2))
-        
-        vl = self.font_md.render(f"{volts:.1f}V", True, t["text_med"])
-        s.blit(vl, (W - vl.get_width() - 10, ty))
-
-        # ── Side Pillars: Fuel (Left) and HV Battery (Right) ──
-        # Move them to the absolute edges to maximize central space
-        ph = 140
-        py = ty + 30
-        
-        # Fuel (Left)
-        px = 4
-        pygame.draw.rect(s, t["border"], (px, py, 12, ph), border_radius=4)
-        fh = max(0, int(ph * fuel / 100))
-        fc = GREEN if fuel > 20 else AMBER if fuel > 10 else RED
-        if fh > 0:
-            pygame.draw.rect(s, fc, (px, py + ph - fh, 12, fh), border_radius=4)
-        s.blit(self.font_xs.render("FUEL", True, t["text_dim"]), (px + 16, py))
-        s.blit(self.font_sm.render(f"{fuel:.0f}%", True, fc), (px + 16, py + 14))
-        fuel_mi = int(fuel / 100 * 12.8 * 40)
-        s.blit(self.font_xs.render(f"{fuel_mi}mi", True, t["text_med"]), (px + 16, py + ph - 12))
-
-        # HV Battery (Right)
-        bx = W - 16
-        pygame.draw.rect(s, t["border"], (bx, py, 12, ph), border_radius=4)
-        bh_fill = max(0, int(ph * hv / 100))
-        bc = GREEN if hv > 30 else AMBER if hv > 15 else RED
-        if bh_fill > 0:
-            pygame.draw.rect(s, bc, (bx, py + ph - bh_fill, 12, bh_fill), border_radius=4)
-        s.blit(self.font_xs.render("BATT", True, t["text_dim"]), (bx - 35, py))
-        s.blit(self.font_sm.render(f"{hv:.0f}%", True, bc), (bx - 35, py + 14))
-        ev_mi = int(hv / 100 * 15)
-        ev_t = self.font_xs.render(f"{ev_mi}mi", True, GREEN)
-        s.blit(ev_t, (bx - ev_t.get_width() - 4, py + ph - 12))
-
-        # ── Central speedometer (Larger) ──
-        cx = W // 2
-        cy = py + 75
-        r = 85  # Increased from 52
+        # ── Central Cluster: Speedo ──
+        # Large central arc (stock style)
+        cx, cy = W // 2, 175
+        r_speed = 135
         sp_pct = min(speed / 140, 1.0)
-        self.draw_arc_gauge(cx, cy, r, 10, sp_pct, t["primary"])
-        self.draw_arc_gauge(cx, cy, r - 12, 3, sp_pct, t["primary_dim"])
+        # Main speed arc - from 5 o'clock to 7 o'clock (ish) — actually pi+0.5 to -0.5
+        # For top-half plus side extensions: 1.1*pi to -0.1*pi
+        self.draw_arc_gauge(cx, cy, r_speed, 12, sp_pct, t["primary"], 
+                             start=math.pi*1.15, end=-math.pi*0.15)
         
-        # RPM as inner ring
+        # RPM as thin inner ring
         rpm_pct = min(rpm / 7000, 1.0)
         rc = t["primary_dim"] if rpm < 3000 else AMBER if rpm < 5500 else RED
-        self.draw_arc_gauge(cx, cy, r - 20, 3, rpm_pct, rc)
+        self.draw_arc_gauge(cx, cy, r_speed - 15, 3, rpm_pct, rc,
+                             start=math.pi*1.15, end=-math.pi*0.15)
 
-        sp_txt = self.font_xxl.render(f"{int(speed)}", True, t["primary"])
-        s.blit(sp_txt, (cx - sp_txt.get_width()//2, cy - sp_txt.get_height() + 15))
-        s.blit(self.font_md.render("MPH", True, t["text_dim"]), (cx - 18, cy + 12))
+        # Speed Digits
+        sp_txt = self.font_xxl.render(f"{int(speed)}", True, t["text_bright"])
+        s.blit(sp_txt, (cx - sp_txt.get_width()//2, cy - 65))
+        s.blit(self.font_md.render("MPH", True, t["text_dim"]), (cx - 18, cy - 2))
 
-        # ── Power/Charge meter (Repositioned) ──
-        pfy = cy + 45
-        pfw = 200
-        pfx = (W - pfw) // 2
-        pfh = 8
-        pfcx = pfx + pfw // 2
+        # EV/GAS status badge (below speed)
+        mc = GREEN if ev else t["primary"]
+        badge_w, badge_h = 50, 20
+        pygame.draw.rect(s, mc, (cx - badge_w//2, cy + 25, badge_w, badge_h), border_radius=4)
+        ml = self.font_sm.render("EV" if ev else "GAS", True, (0, 0, 0))
+        s.blit(ml, (cx - ml.get_width()//2, cy + 25 + (badge_h - ml.get_height())//2))
 
-        pygame.draw.rect(s, t["border"], (pfx, pfy, pfw, pfh), border_radius=4)
-        pygame.draw.line(s, t["text_bright"], (pfcx, pfy - 3), (pfcx, pfy + pfh + 3), 2)
-
-        s.blit(self.font_xs.render("CHG", True, GREEN), (pfx, pfy - 12))
-        pw_l = self.font_xs.render("PWR", True, t["primary"])
-        s.blit(pw_l, (pfx + pfw - pw_l.get_width(), pfy - 12))
-
+        # ── Left Cluster: CHG/PWR (Charge/Power) ──
+        # Half-circle on the left
+        lx, ly = 75, 175
+        lr = 85
         if ev:
-            pwr = min(throttle / 80, 1.0)
-            fw = int((pfw // 2) * pwr)
-            if fw > 1:
-                pygame.draw.rect(s, GREEN, (pfcx, pfy, fw, pfh), border_radius=4)
+            # Only Power when EV
+            pwr_pct = min(throttle / 80, 1.0)
+            self.draw_arc_gauge(lx, ly, lr, 8, pwr_pct, GREEN, 
+                                 start=math.pi*1.3, end=math.pi*0.7)
         else:
-            pwr = min(load / 100, 1.0)
-            fw = int((pfw // 2) * pwr)
-            if fw > 1:
-                pc = t["primary"] if pwr < 0.6 else AMBER if pwr < 0.85 else RED
-                pygame.draw.rect(s, pc, (pfcx, pfy, fw, pfh), border_radius=4)
-            if throttle < 5 and rpm > 800:
-                rw = int((pfw // 2) * 0.15)
-                pygame.draw.rect(s, GREEN, (pfcx - rw, pfy, rw, pfh), border_radius=4)
+            # Hybrid mode: show Load and CHG
+            load_pct = min(load / 100, 1.0)
+            pc = t["primary"] if load_pct < 0.7 else AMBER if load_pct < 0.9 else RED
+            self.draw_arc_gauge(lx, ly, lr, 8, load_pct, pc, 
+                                 start=math.pi, end=math.pi*0.7)
+            # CHG (below 9 o'clock)
+            chg_pct = 0.3 if (throttle < 5 and rpm > 800) else 0.0
+            self.draw_arc_gauge(lx, ly, lr, 8, chg_pct, GREEN, 
+                                 start=math.pi, end=math.pi*1.3)
+        
+        s.blit(self.font_xs.render("PWR", True, t["text_dim"]), (lx - 20, ly - lr - 10))
+        s.blit(self.font_xs.render("CHG", True, GREEN), (lx - 20, ly + lr + 2))
 
-        # ── Lower Data Grid (2x2) ──
-        dy = pfy + 25
-        dw = 120
-        dh = 6
-        pad_x = 80
-        pad_y = 22
+        # ── Right Cluster: Fuel & Battery ──
+        # Nested arcs on the right
+        rx, ry = W - 75, 175
+        rr = 85
+        # Fuel Outer
+        fc = GREEN if fuel > 20 else AMBER if fuel > 10 else RED
+        self.draw_arc_gauge(rx, ry, rr, 8, fuel/100, fc,
+                             start=math.pi*0.3, end=-math.pi*0.3)
+        # HV Battery Inner
+        bc = GREEN if hv > 30 else AMBER if hv > 15 else RED
+        self.draw_arc_gauge(rx, ry, rr - 15, 6, hv/100, bc,
+                             start=math.pi*0.3, end=-math.pi*0.3)
 
-        # Column 1
-        cc = t["primary"] if cool < 100 else AMBER if cool < 110 else RED
-        self.draw_hbar(pad_x, dy, dw, dh, min(cool/130, 1), cc, "COOLANT", f"{cool:.0f}C")
-        lc = t["primary"] if load < 70 else AMBER if load < 90 else RED
-        self.draw_hbar(pad_x, dy + pad_y, dw, dh, load/100, lc, "ENGINE LOAD", f"{load:.0f}%")
+        s.blit(self.font_xs.render("FUEL", True, t["text_dim"]), (rx - 15, ry - rr - 10))
+        s.blit(self.font_xs.render("BATT", True, t["text_dim"]), (rx - 15, ry + rr + 2))
 
-        # Column 2
-        self.draw_hbar(W - pad_x - dw, dy, dw, dh, min(rpm/7000, 1),
-                       t["primary_dim"] if rpm < 3000 else AMBER, "RPM", f"{int(rpm)}")
-        self.draw_hbar(W - pad_x - dw, dy + pad_y, dw, dh, throttle/100,
-                       t["accent"], "THROTTLE", f"{throttle:.0f}%")
+        # ── Top strip info ──
+        ty = 4 + wy
+        s.blit(self.font_md.render(now.strftime("%I:%M"), True, t["text_bright"]), (12, ty))
+        vl = self.font_md.render(f"{volts:.1f}V", True, t["text_med"])
+        s.blit(vl, (W - vl.get_width() - 12, ty))
 
-        # ── Range + music ──
-        ry = dy + pad_y * 2 + 10
-        total = fuel_mi + ev_mi
-        rt = self.font_sm.render(f"Range: {total}mi", True, t["text_bright"])
-        s.blit(rt, (60, ry))
-        it_t = self.font_xs.render(f"Air:{intake:.0f}C", True, t["text_dim"])
-        s.blit(it_t, (W - it_t.get_width() - 60, ry + 2))
+        # ── Lower Data (between clusters) ──
+        # Ambient/Intake temp
+        at_t = self.font_xs.render(f"Air:{intake:.0f}C", True, t["text_dim"])
+        s.blit(at_t, (cx + 50, cy + 55))
+        # Coolant
+        ct_t = self.font_xs.render(f"H2O:{cool:.0f}C", True, t["text_med"])
+        s.blit(ct_t, (cx - 50 - ct_t.get_width(), cy + 55))
 
-        ly = ry + 20
-        pygame.draw.line(s, t["border_lite"], (10, ly), (W - 10, ly))
+        # Range
+        fuel_mi = int(fuel / 100 * 12.8 * 40)
+        ev_mi = int(hv / 100 * 15)
+        rt = self.font_sm.render(f"Range: {fuel_mi + ev_mi}mi", True, t["text_bright"])
+        s.blit(rt, ((W - rt.get_width())//2, H - 54))
+
+        ly = H - 36
+        pygame.draw.line(s, t["border_lite"], (20, ly), (W - 20, ly))
         self.draw_lower_section(ly + 4, music, vd)
 
     def draw_system_page(self, stats, music):
