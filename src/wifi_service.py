@@ -48,6 +48,15 @@ def write_status(data):
     except Exception:
         pass
 
+    # Control Pi PWR LED — on=connected, off=disconnected
+    try:
+        state = data.get("state", "")
+        led = "1" if state == "connected" else "0"
+        with open("/sys/class/leds/PWR/brightness", "w") as f:
+            f.write(led)
+    except Exception:
+        pass
+
 
 def run_cmd(cmd, timeout=10):
     try:
