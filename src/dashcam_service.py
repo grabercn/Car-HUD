@@ -13,7 +13,7 @@ import subprocess
 import glob
 import threading
 
-RECORD_DIR = "/home/chrismslist/northstar/dashcam"
+RECORD_DIR = "/home/chrismslist/car-hud/dashcam"
 SIGNAL_FILE = "/tmp/car-hud-dashcam-data"
 VOICE_FILE = "/tmp/car-hud-voice-signal"
 OBD_FILE = "/tmp/car-hud-obd-data"

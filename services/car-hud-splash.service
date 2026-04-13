@@ -10,7 +10,7 @@ Environment=PYGAME_HIDE_SUPPORT_PROMPT=1
 Environment=SDL_VIDEODRIVER=kmsdrm
 Environment=SDL_FBDEV=/dev/fb0
 ExecStartPre=-/bin/sh -c "setterm --clear all --cursor off > /dev/tty1 2>/dev/null"
-ExecStart=/usr/bin/python3 -W ignore /home/chrismslist/northstar/bootsplash.py
+ExecStart=/usr/bin/python3 -W ignore /home/chrismslist/car-hud/splash_service.py
 StandardInput=tty
 StandardOutput=null
 StandardError=null

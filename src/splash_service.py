@@ -23,7 +23,7 @@ import pygame
 from pygame.locals import *
 from PIL import Image
 
-BOOT_DATA_FILE = "/home/chrismslist/northstar/.boot_times.json"
+BOOT_DATA_FILE = "/home/chrismslist/car-hud/.boot_times.json"
 DEFAULT_BOOT_TIME = 22.0
 MAX_HISTORY = 10
 
@@ -60,7 +60,7 @@ def check_critical_errors():
         for line in result.stdout.strip().split("\n"):
             if line.strip():
                 svc = line.split()[0] if line.split() else ""
-                if svc and "northstar" not in svc and "car-hud" not in svc:
+                if svc and "car-hud" not in svc and "car-hud" not in svc:
                     errors.append(svc)
     except Exception:
         pass
@@ -69,7 +69,7 @@ def check_critical_errors():
 
 def hud_is_active():
     try:
-        r = subprocess.run(["systemctl", "is-active", "northstar-hud"],
+        r = subprocess.run(["systemctl", "is-active", "car-hud"],
                            capture_output=True, text=True, timeout=2)
         return r.stdout.strip() == "active"
     except Exception:
@@ -99,25 +99,25 @@ def main():
 
     if screen is None:
         os.system("fbi -d /dev/fb0 --noverbose -a -T 1 "
-                  "/home/chrismslist/northstar/splash.png 2>/dev/null")
+                  "/home/chrismslist/car-hud/splash.png 2>/dev/null")
         time.sleep(25)
         return
 
     pygame.mouse.set_visible(False)
 
     # Play startup chime (Unique chime if just updated)
-    UPDATE_FLAG = "/home/chrismslist/northstar/.update_pending"
+    UPDATE_FLAG = "/home/chrismslist/car-hud/.update_pending"
     if os.path.exists(UPDATE_FLAG):
-        subprocess.Popen(["aplay", "-q", "/home/chrismslist/northstar/chime_update_ok.wav"],
+        subprocess.Popen(["aplay", "-q", "/home/chrismslist/car-hud/chime_update_ok.wav"],
                          stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
         try: os.remove(UPDATE_FLAG)
         except: pass
     else:
-        subprocess.Popen(["aplay", "-q", "/home/chrismslist/northstar/chime_startup.wav"],
+        subprocess.Popen(["aplay", "-q", "/home/chrismslist/car-hud/chime_startup.wav"],
                          stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 
     # Load splash image
-    splash_path = "/home/chrismslist/northstar/splash.png"
+    splash_path = "/home/chrismslist/car-hud/splash.png"
     try:
         pil_img = Image.open(splash_path).convert("RGB")
         pil_img = pil_img.resize((dw, dh), Image.LANCZOS)
@@ -280,7 +280,7 @@ def main():
         if progress < 0.3:
             phase_text = "System Initialization..."
         elif progress < 0.6:
-            phase_text = "Loading Northstar Modules..."
+            phase_text = "Loading Car-HUD Modules..."
         elif progress < 0.85:
             phase_text = "Connecting to OBD..."
         elif hud_ready:

@@ -19,7 +19,7 @@ from urllib.parse import unquote
 
 PORT = 8080
 SCREENSHOT_PATH = "/tmp/car-hud-screenshot.bmp"
-DASHCAM_DIR = "/home/chrismslist/northstar/dashcam"
+DASHCAM_DIR = "/home/chrismslist/car-hud/dashcam"
 DASHCAM_STATUS = "/tmp/car-hud-dashcam-data"
 
 # Reference counting for active camera streams
@@ -388,7 +388,7 @@ a{{color:#0af}}
                 pass
             if action == "theme":
                 try:
-                    with open("/home/chrismslist/northstar/.theme", "w") as f:
+                    with open("/home/chrismslist/car-hud/.theme", "w") as f:
                         json.dump({"theme": target, "auto": False}, f)
                 except Exception:
                     pass

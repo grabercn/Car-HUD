@@ -19,7 +19,7 @@ import wave
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 SAMPLE_RATE = 16000
-PARAMS_FILE = "/home/chrismslist/northstar/.audio_params.json"
+PARAMS_FILE = "/home/chrismslist/car-hud/.audio_params.json"
 CALIB_DIR = "/tmp/car-hud-calibration"
 SIGNAL_FILE = "/tmp/car-hud-calibration-status"
 
@@ -91,7 +91,7 @@ def test_gain(samples, gain):
     from vosk import Model, KaldiRecognizer
 
     if _vosk_model is None:
-        _vosk_model = Model("/home/chrismslist/northstar/vosk-model")
+        _vosk_model = Model("/home/chrismslist/car-hud/vosk-model")
     rec = KaldiRecognizer(_vosk_model, SAMPLE_RATE)
     rec.SetWords(True)
 
@@ -201,7 +201,7 @@ def main():
     from vosk import Model
     log("Loading Vosk model...")
     write_status("loading", 0, "Loading speech model...")
-    _vosk_model = Model("/home/chrismslist/northstar/vosk-model")
+    _vosk_model = Model("/home/chrismslist/car-hud/vosk-model")
     log("Model loaded")
 
     usb_card, cam_card = find_mics()
@@ -235,7 +235,7 @@ def main():
 
     # Play success chime
     subprocess.run(["aplay", "-D", "default",
-                   "/home/chrismslist/northstar/chime_ok.wav"],
+                   "/home/chrismslist/car-hud/chime_ok.wav"],
                    capture_output=True, timeout=3)
 
     # Restart services with new params

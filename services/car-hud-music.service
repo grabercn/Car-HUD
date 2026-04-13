@@ -3,7 +3,7 @@ Description=Car-HUD Bluetooth Music Service
 After=bluetooth.target
 
 [Service]
-ExecStart=/usr/bin/python3 /home/chrismslist/northstar/music_service.py
+ExecStart=/usr/bin/python3 /home/chrismslist/car-hud/music_service.py
 Restart=always
 RestartSec=10
 User=chrismslist

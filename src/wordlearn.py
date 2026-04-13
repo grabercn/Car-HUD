@@ -12,7 +12,7 @@ import json
 import os
 import time
 
-LEARN_FILE = "/home/chrismslist/northstar/.word_corrections.json"
+LEARN_FILE = "/home/chrismslist/car-hud/.word_corrections.json"
 MAX_ENTRIES = 1000
 
 
@@ -128,7 +128,7 @@ def get_stats():
 
 
 # ── Audio parameter reinforcement learning ──
-AUDIO_PARAMS_FILE = "/home/chrismslist/northstar/.audio_params.json"
+AUDIO_PARAMS_FILE = "/home/chrismslist/car-hud/.audio_params.json"
 
 def load_audio_params():
     """Load learned audio parameters."""
@@ -182,7 +182,7 @@ def reinforce_audio(success, mic1_gain, mic2_gain, mic1_snr, mic2_snr):
 
 
 # ── Voice profile learning ──
-VOICE_PROFILE_FILE = "/home/chrismslist/northstar/.voice_profile.json"
+VOICE_PROFILE_FILE = "/home/chrismslist/car-hud/.voice_profile.json"
 
 def update_voice_profile(rms_during_speech, frequency_estimate=None):
     """Learn the user's voice characteristics over time.

@@ -20,7 +20,7 @@ from wordlearn import reinforce_audio, update_voice_profile, load_audio_params
 from vosk import Model, KaldiRecognizer
 
 SIGNAL_FILE = "/tmp/car-hud-voice-signal"
-VOSK_MODEL = "/home/chrismslist/northstar/vosk-model"
+VOSK_MODEL = "/home/chrismslist/car-hud/vosk-model"
 LOG_FILE = "/tmp/car-hud-voice.log"
 SAMPLE_RATE = 16000
 CHUNK = 1024  # 64ms — faster wake detection
@@ -83,11 +83,11 @@ def play_sound(path):
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception: pass
 
-def play_wake(): play_sound("/home/chrismslist/northstar/chime_wake.wav")
-def play_ok(): play_sound("/home/chrismslist/northstar/chime_ok.wav")
-def play_err(): play_sound("/home/chrismslist/northstar/chime_err.wav")
-def play_think(): play_sound("/home/chrismslist/northstar/chime_think.wav")
-def play_timeout(): play_sound("/home/chrismslist/northstar/chime_err.wav") # Reuse err for timeout
+def play_wake(): play_sound("/home/chrismslist/car-hud/chime_wake.wav")
+def play_ok(): play_sound("/home/chrismslist/car-hud/chime_ok.wav")
+def play_err(): play_sound("/home/chrismslist/car-hud/chime_err.wav")
+def play_think(): play_sound("/home/chrismslist/car-hud/chime_think.wav")
+def play_timeout(): play_sound("/home/chrismslist/car-hud/chime_err.wav") # Reuse err for timeout
 def speak(text): smart_tts(text)
 
 

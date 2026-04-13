@@ -20,7 +20,7 @@ import subprocess
 
 SIGNAL_FILE = "/tmp/car-hud-wifi-data"
 VOICE_FILE = "/tmp/car-hud-voice-signal"
-KNOWN_NETWORKS_FILE = "/home/chrismslist/northstar/.known_networks.json"
+KNOWN_NETWORKS_FILE = "/home/chrismslist/car-hud/.known_networks.json"
 LOG_FILE = "/tmp/car-hud-wifi.log"
 
 
@@ -65,7 +65,7 @@ def check_play_wifi_chime(state):
     if state == "connected" and _last_wifi_state != "connected":
         try:
             subprocess.Popen(["aplay", "-D", "default",
-                             "/home/chrismslist/northstar/chime_wifi.wav"],
+                             "/home/chrismslist/car-hud/chime_wifi.wav"],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
             pass

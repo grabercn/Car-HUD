@@ -28,13 +28,13 @@ A Raspberry Pi 3B+ powered heads-up display for a 2014 Honda Accord Hybrid. Voic
 - PWR LED on Pi: on = WiFi connected, off = disconnected
 - WiFi connect plays chime_wifi.wav
 
-## 4. ALL FILES ON PI (~/northstar/)
+## 4. ALL FILES ON PI (~/car-hud/)
 
 ### Python Services
 | File | Service Name | Description |
 |------|-------------|-------------|
-| hud.py | northstar-hud | Main HUD display (pygame, 480x320, 6 themes) |
-| bootsplash.py | northstar-splash | Animated Honda boot splash with self-calibrating progress bar |
+| hud.py | car-hud | Main HUD display (pygame, 480x320, 6 themes) |
+| splash_service.py | car-hud-splash | Animated Honda boot splash with self-calibrating progress bar |
 | voice.py | car-hud-voice | Dual-mic Vosk STT, wake word "Hey Honda", Gemini NLU |
 | brain.py | (imported by voice) | Gemini 3.0F/2.5F/2.0F fallback chain + local intent |
 | intent.py | (imported by brain) | Local keyword intent matcher (offline fallback) |
@@ -43,7 +43,7 @@ A Raspberry Pi 3B+ powered heads-up display for a 2014 Honda Accord Hybrid. Voic
 | wifi_service.py | car-hud-wifi | WiFi management, auto-connect, LED control |
 | dashcam_service.py | car-hud-dashcam | Webcam recording, 5-min chunks, 2GB/50 clip max |
 | music_service.py | car-hud-music | Bluetooth A2DP music metadata (DISABLED — no phone paired) |
-| screenshot_server.py | car-hud-web | Web viewer on port 8080: MJPEG HUD stream, live camera, dashcam browser |
+| web_service.py | car-hud-web | Web viewer on port 8080: MJPEG HUD stream, live camera, dashcam browser |
 | calibrate.py | (on-demand) | Voice calibration tool — plays voice sample, tests gain levels |
 | denoise.py | (imported by voice) | SpeexDSP noise suppression via ctypes (CURRENTLY DISABLED — was causing segfaults) |
 | generate_splash.py | (one-time) | Generates the static Honda splash PNG |
@@ -173,7 +173,7 @@ blue, red, green, amber, day (white bg), night (ultra-dim). Each theme defines: 
 - **Sudoers** configured for chrismslist to stop/start dashcam without password
 - **Boot optimizations**: cloud-init purged, ModemManager disabled, apparmor/bluetooth(re-enabled)/udisks2/fstrim/console-setup disabled, quiet splash, no cursor, no kernel logo
 - **Boot time**: ~12 seconds splash, ~22s total
-- **The local northstar_local/ folder** may have cross-platform patches that break Pi. ALWAYS pull from Pi first.
+- **The local car-hud_local/ folder** may have cross-platform patches that break Pi. ALWAYS pull from Pi first.
 
 ## 11. CONNECTION CHEAT SHEET
 
@@ -194,5 +194,5 @@ ssh chrismslist@172.20.10.2 "sudo reboot"
 ssh chrismslist@172.20.10.2 "for f in /tmp/car-hud-*.log; do echo === \$f ===; tail -5 \$f; done"
 
 # Check all services
-ssh chrismslist@172.20.10.2 "for svc in northstar-hud car-hud-voice car-hud-obd car-hud-wifi car-hud-web car-hud-dashcam; do printf '%s: %s\n' \$svc \$(systemctl is-active \$svc); done"
+ssh chrismslist@172.20.10.2 "for svc in car-hud car-hud-voice car-hud-obd car-hud-wifi car-hud-web car-hud-dashcam; do printf '%s: %s\n' \$svc \$(systemctl is-active \$svc); done"
 ```

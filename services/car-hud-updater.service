@@ -7,7 +7,7 @@ Wants=NetworkManager.service
 Type=oneshot
 User=root
 ExecStartPre=/bin/sleep 30
-ExecStart=/bin/bash /home/chrismslist/northstar/update.sh
+ExecStart=/bin/bash /home/chrismslist/car-hud/update.sh
 
 [Install]
 WantedBy=multi-user.target

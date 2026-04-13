@@ -16,7 +16,7 @@ import subprocess
 
 SIGNAL_FILE = "/tmp/car-hud-music-data"
 VOICE_FILE = "/tmp/car-hud-voice-signal"
-PAIR_FILE = "/home/chrismslist/northstar/.paired_phone"
+PAIR_FILE = "/home/chrismslist/car-hud/.paired_phone"
 LOG_FILE = "/tmp/car-hud-music.log"
 
 

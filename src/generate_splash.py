@@ -19,7 +19,7 @@ for r in range(int(max_r), 0, -4):
     draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(base, base, base + 1))
 
 # -- Load and place Honda logo --
-logo = Image.open("/home/chrismslist/northstar/honda_logo.png").convert("RGBA")
+logo = Image.open("/home/chrismslist/car-hud/honda_logo.png").convert("RGBA")
 
 # Resize logo to fit nicely - about 280px tall for the H badge
 logo_h = 260
@@ -115,5 +115,5 @@ for i in range(line_w):
 # -- No static loading bar — the animated bootsplash handles this --
 # -- No version text - keep it stock --
 
-img.save("/home/chrismslist/northstar/splash.png", quality=95)
+img.save("/home/chrismslist/car-hud/splash.png", quality=95)
 print("Premium Honda Accord splash generated!")

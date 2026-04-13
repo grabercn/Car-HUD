@@ -6,7 +6,7 @@ Wants=NetworkManager.service
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/bin/python3 -W ignore /home/chrismslist/northstar/wifi_service.py
+ExecStart=/usr/bin/python3 -W ignore /home/chrismslist/car-hud/wifi_service.py
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal

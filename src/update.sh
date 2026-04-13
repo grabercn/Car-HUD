@@ -4,10 +4,20 @@
 # Called on boot by car-hud-updater.service or manually.
 
 set -e
-INSTALL_DIR="/home/chrismslist/northstar"
+INSTALL_DIR="/home/chrismslist/car-hud"
+OLD_INSTALL_DIR="/home/chrismslist/northstar"
 REPO_URL="https://github.com/grabercn/Car-HUD"
 SIGNAL_FILE="/tmp/car-hud-update-status"
 BRANCH="main"
+
+# Handle migration from Northstar to Car-HUD
+if [ ! -d "$INSTALL_DIR" ] && [ -d "$OLD_INSTALL_DIR" ]; then
+    log "Migrating from $OLD_INSTALL_DIR to $INSTALL_DIR..."
+    mv "$OLD_INSTALL_DIR" "$INSTALL_DIR"
+    # Update local hash check if we just moved it
+fi
+
+mkdir -p "$INSTALL_DIR"
 
 write_status() {
     echo "{\"status\":\"$1\",\"detail\":\"$2\",\"progress\":$3,\"time\":$(date +%s)}" > "$SIGNAL_FILE"
@@ -59,7 +69,7 @@ fi
 write_status "installing" "Installing update..." 60
 
 # Stop services
-for svc in northstar-hud car-hud-voice car-hud-web car-hud-music car-hud-dashcam; do
+for svc in car-hud car-hud-voice car-hud-web car-hud-music car-hud-dashcam; do
     systemctl stop "$svc" 2>/dev/null || true
 done
 

@@ -105,8 +105,8 @@ GREEN  = (0, 180, 85)
 AMBER  = (220, 160, 0)
 RED    = (220, 45, 45)
 
-THEME_FILE = "/home/chrismslist/northstar/.theme"
-HONDA_LOGO_PATH = "/home/chrismslist/northstar/honda_logo.png"
+THEME_FILE = "/home/chrismslist/car-hud/.theme"
+HONDA_LOGO_PATH = "/home/chrismslist/car-hud/honda_logo.png"
 
 
 def keyboard_connected():
@@ -1337,7 +1337,7 @@ class CarHUD:
                     elif event.key == K_F1:
                         # Run voice calibration
                         subprocess.Popen(
-                            ["python3", "/home/chrismslist/northstar/calibrate.py"],
+                            ["python3", "/home/chrismslist/car-hud/calibrate.py"],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     elif event.key == K_SLASH or event.key == K_QUESTION:
                         # Show keyboard shortcuts
@@ -1405,7 +1405,7 @@ class CarHUD:
                             continue
                         elif vsig.get("action") == "system" and vsig.get("target") == "calibrate":
                             subprocess.Popen(
-                                ["python3", "/home/chrismslist/northstar/calibrate.py"],
+                                ["python3", "/home/chrismslist/car-hud/calibrate.py"],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                         elif vsig.get("action") == "show" and vsig.get("target") == "camera":
                             if not self.show_camera:

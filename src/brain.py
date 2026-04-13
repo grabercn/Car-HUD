@@ -11,9 +11,9 @@ import hashlib
 import subprocess
 
 GEMINI_KEY = ""
-CONFIG_FILE = "/home/chrismslist/northstar/.keys.json"
+CONFIG_FILE = "/home/chrismslist/car-hud/.keys.json"
 ONLINE_CACHE_FILE = "/tmp/car-hud-online"
-CACHE_FILE = "/home/chrismslist/northstar/.response_cache.json"
+CACHE_FILE = "/home/chrismslist/car-hud/.response_cache.json"
 
 # Words that indicate time-sensitive queries (don't cache these)
 TIMELY_WORDS = {"time", "weather", "date", "today", "tonight", "now",

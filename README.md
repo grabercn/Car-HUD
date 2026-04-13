@@ -56,8 +56,8 @@ src/
   music_service.py    # Bluetooth A2DP music metadata
   wifi_service.py     # WiFi manager with auto-connect
   dashcam_service.py  # Webcam recording in 5-min chunks
-  screenshot_server.py # Web viewer (MJPEG stream + keyboard shortcuts)
-  bootsplash.py       # Animated Honda boot splash
+  web_service.py # Web viewer (MJPEG stream + keyboard shortcuts)
+  splash_service.py       # Animated Honda boot splash
   calibrate.py        # Voice calibration tool
   generate_splash.py  # Static splash image generator
 
@@ -104,8 +104,8 @@ Supports keyboard shortcuts from the browser.
 
 | Service | Description |
 |---------|-------------|
-| northstar-splash | Boot splash with progress bar |
-| northstar-hud | Main display |
+| car-hud-splash | Boot splash with progress bar |
+| car-hud | Main display |
 | car-hud-voice | Voice recognition + commands |
 | car-hud-obd | OBD-II vehicle data |
 | car-hud-wifi | WiFi management |

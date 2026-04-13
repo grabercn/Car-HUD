@@ -3,7 +3,7 @@
 # Run on Raspberry Pi 3B+: sudo bash install.sh
 
 set -e
-INSTALL_DIR="/home/chrismslist/northstar"
+INSTALL_DIR="/home/chrismslist/car-hud"
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo "=== Car-HUD Installer ==="
@@ -34,7 +34,7 @@ done
 systemctl daemon-reload
 
 # Enable services
-for svc in northstar-splash northstar-hud car-hud-voice car-hud-obd \
+for svc in car-hud-splash car-hud car-hud-voice car-hud-obd \
            car-hud-wifi car-hud-dashcam car-hud-web hide-cursor; do
     systemctl enable "$svc" 2>/dev/null || true
 done
@@ -43,7 +43,7 @@ done
 cat > /usr/local/bin/car-hud << 'EOF'
 #!/bin/bash
 sudo killall fbi 2>/dev/null
-exec python3 /home/chrismslist/northstar/hud.py
+exec python3 /home/chrismslist/car-hud/hud.py
 EOF
 chmod +x /usr/local/bin/car-hud
 
