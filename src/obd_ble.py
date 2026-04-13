@@ -17,27 +17,24 @@ LOG_FILE = "/tmp/car-hud-obd.log"
 OBD_NAMES = ["ios-vlink", "android-vlink", "vlink", "icar"]
 CHAR_UUID = "bef8d6c9-9c21-4c9e-b632-bd58c1009f9f"  # read/write/notify
 
+# PID configuration: (Name, parser_func, data_bytes)
 PIDS = {
-    # Critical — read every cycle
-    "010C": ("RPM", lambda v: int(v, 16) / 4 if v else 0),
-    "010D": ("SPEED", lambda v: int(v, 16) if v else 0),
-    "015B": ("HYBRID_BATTERY_REMAINING", lambda v: int(v, 16) * 100 / 255 if v else 0),
-    "0104": ("ENGINE_LOAD", lambda v: int(v, 16) * 100 / 255 if v else 0),
-    "0111": ("THROTTLE_POS", lambda v: int(v, 16) * 100 / 255 if v else 0),
-    # Important
-    "012F": ("FUEL_LEVEL", lambda v: int(v, 16) * 100 / 255 if v else 0),
-    "0105": ("COOLANT_TEMP", lambda v: int(v, 16) - 40 if v else 0),
-    "0142": ("CONTROL_MODULE_VOLTAGE", lambda v: int(v, 16) / 1000 if v else 0),
-    "010F": ("INTAKE_TEMP", lambda v: int(v, 16) - 40 if v else 0),
-    # Extended — hybrid specific
-    "0143": ("ABSOLUTE_LOAD", lambda v: int(v, 16) * 100 / 255 if v else 0),
-    "010E": ("TIMING_ADVANCE", lambda v: int(v, 16) / 2 - 64 if v else 0),
-    "0110": ("MAF", lambda v: int(v, 16) / 100 if v else 0),  # grams/sec
-    "0133": ("BAROMETRIC_PRESSURE", lambda v: int(v, 16) if v else 0),
-    "013C": ("CATALYST_TEMP_B1S1", lambda v: int(v, 16) / 10 - 40 if v else 0),
-    "0106": ("SHORT_FUEL_TRIM", lambda v: int(v, 16) * 100 / 128 - 100 if v else 0),
-    "0107": ("LONG_FUEL_TRIM", lambda v: int(v, 16) * 100 / 128 - 100 if v else 0),
+    "010C": ("RPM", lambda v: int(v, 16) / 4 if v else 0, 2),
+    "010D": ("SPEED", lambda v: int(v, 16) if v else 0, 1),
+    "0104": ("ENGINE_LOAD", lambda v: int(v, 16) * 100 / 255 if v else 0, 1),
+    "0111": ("THROTTLE_POS", lambda v: int(v, 16) * 100 / 255 if v else 0, 1),
+    "015B": ("HYBRID_BATTERY_REMAINING", lambda v: int(v, 16) * 100 / 255 if v else 0, 1),
+    "012F": ("FUEL_LEVEL", lambda v: int(v, 16) * 100 / 255 if v else 0, 1),
+    "0105": ("COOLANT_TEMP", lambda v: int(v, 16) - 40 if v else 0, 1),
+    "0142": ("CONTROL_MODULE_VOLTAGE", lambda v: int(v, 16) / 1000 if v else 0, 2),
+    "010F": ("INTAKE_TEMP", lambda v: int(v, 16) - 40 if v else 0, 1),
 }
+
+# Group PIDs into one command for speed (max 6 per command on most ELM327)
+PID_GROUPS = [
+    ["010C", "010D", "0104", "0111"], # Fast group (Engine/Speed)
+    ["015B", "012F", "0105", "0142", "010F"] # Slower group (Levels/Temps)
+]
 
 
 def log(msg):
@@ -92,26 +89,27 @@ class BleOBD:
                     return addr
         return None
 
-    def parse_pid_response(self, response, pid):
-        """Parse ELM327 PID response: '41 0C 1A F8' -> data bytes."""
-        lines = response.replace("\r", " ").replace("\n", " ").split()
-        # Find response bytes after the header (41 XX)
-        try:
-            mode = pid[:2]
+    def parse_group_response(self, response, pids):
+        """Parse multi-PID response: '41 0C 1A F8 0D 00' -> {'RPM': ..., 'SPEED': ...}"""
+        results = {}
+        # Clean response: remove spaces, newlines, and headers
+        cleaned = "".join(response.replace("\r", " ").replace("\n", " ").split()).upper()
+        
+        # ELM327 usually echoes back '41 <PID> <DATA>' for each PID in group
+        for pid in pids:
             pid_num = pid[2:]
-            expected = f"41{pid_num}".upper()
-            cleaned = "".join(lines).upper().replace(" ", "")
-            idx = cleaned.find(expected)
+            header = f"41{pid_num}"
+            idx = cleaned.find(header)
             if idx >= 0:
-                data_start = idx + len(expected)
-                # For 2-byte PIDs (RPM)
-                if pid in ("010C", "0142"):
-                    return cleaned[data_start:data_start + 4]
-                else:
-                    return cleaned[data_start:data_start + 2]
-        except Exception:
-            pass
-        return None
+                name, parser, n_bytes = PIDS[pid]
+                data_start = idx + len(header)
+                raw = cleaned[data_start : data_start + n_bytes * 2]
+                if len(raw) == n_bytes * 2:
+                    try:
+                        results[name] = parser(raw)
+                    except Exception:
+                        pass
+        return results
 
     async def run(self):
         write_obd({"connected": False, "status": "scanning", "data": {}, "warnings": [], "dtcs": []})
@@ -138,6 +136,7 @@ class BleOBD:
                     await self.send(client, "ATL0")
                     await self.send(client, "ATS0")
                     await self.send(client, "ATH0")
+                    await self.send(client, "ATAT1") # Adaptive timing ON
                     resp = await self.send(client, "ATSP0")  # auto protocol
                     log(f"Protocol: auto")
 
@@ -156,26 +155,48 @@ class BleOBD:
                                "data": {}, "warnings": [], "dtcs": []})
 
                     # Main read loop
+                    data = {}
+                    last_dtc_check = 0
+                    
                     while client.is_connected:
-                        data = {}
                         warnings = []
-
-                        for pid, (name, parser) in PIDS.items():
-                            resp = await self.send(client, pid, 3)
+                        
+                        # Read PID groups
+                        for group in PID_GROUPS:
+                            cmd = "".join(group)
+                            resp = await self.send(client, cmd, 3)
+                            
                             if "NO DATA" in resp or "ERROR" in resp or not resp:
-                                continue
-                            raw = self.parse_pid_response(resp, pid)
-                            if raw:
-                                try:
-                                    val = parser(raw)
-                                    data[name] = val
+                                # Fallback to sequential if grouped fails
+                                for pid in group:
+                                    resp = await self.send(client, pid, 2)
+                                    parsed = self.parse_group_response(resp, [pid])
+                                    data.update(parsed)
+                            else:
+                                parsed = self.parse_group_response(resp, group)
+                                data.update(parsed)
 
-                                    if name == "COOLANT_TEMP" and val > 110:
-                                        warnings.append(f"HOT COOLANT {val:.0f}C")
-                                    elif name == "HYBRID_BATTERY_REMAINING" and val < 15:
-                                        warnings.append(f"LOW HV BATT {val:.0f}%")
-                                except Exception:
-                                    pass
+                        # Threshold checks
+                        cool = data.get("COOLANT_TEMP", 0)
+                        if cool > 105: warnings.append(f"HOT COOLANT {cool:.0f}C")
+                        hv = data.get("HYBRID_BATTERY_REMAINING", 0)
+                        if hv < 15: warnings.append(f"LOW HV BATT {hv:.0f}%")
+                        volts = data.get("CONTROL_MODULE_VOLTAGE", 0)
+                        if volts < 11.5: warnings.append(f"LOW VOLTS {volts:.1f}V")
+
+                        # Periodic DTC check (every 60s)
+                        dtcs = []
+                        if time.time() - last_dtc_check > 60:
+                            last_dtc_check = time.time()
+                            resp = await self.send(client, "03", 5)
+                            if resp and "43" in resp:
+                                # 43 01 33 -> P0133
+                                try:
+                                    raw = "".join(resp.split()).upper()
+                                    if len(raw) >= 6:
+                                        code = raw[2:6]
+                                        dtcs.append(f"P{code}")
+                                except Exception: pass
 
                         write_obd({
                             "connected": True,
@@ -183,11 +204,16 @@ class BleOBD:
                             "adapter": "Vgate iCar Pro 2S (BLE)",
                             "data": data,
                             "warnings": warnings,
-                            "dtcs": [],
+                            "dtcs": dtcs,
                             "timestamp": time.time()
                         })
 
-                        await asyncio.sleep(0.3)
+                        await asyncio.sleep(0.1) # Fast loop
+
+            except Exception as e:
+                log(f"BLE error: {e}")
+                write_obd({"connected": False, "status": "disconnected", "data": {}, "warnings": [], "dtcs": []})
+                await asyncio.sleep(5)
 
             except Exception as e:
                 log(f"BLE error: {e}")

@@ -57,7 +57,7 @@ fi
 write_status "installing" "Installing update..." 60
 
 # Stop services
-for svc in northstar-hud car-hud-voice car-hud-web; do
+for svc in northstar-hud car-hud-voice car-hud-web car-hud-music; do
     systemctl stop "$svc" 2>/dev/null || true
 done
 
@@ -79,7 +79,7 @@ write_status "restarting" "Restarting services..." 80
 echo "$REMOTE_HASH" > "$INSTALL_DIR/.version"
 
 # Restart
-for svc in northstar-hud car-hud-voice car-hud-web car-hud-obd car-hud-wifi car-hud-dashcam; do
+for svc in northstar-hud car-hud-voice car-hud-web car-hud-obd car-hud-wifi car-hud-dashcam car-hud-music; do
     systemctl start "$svc" 2>/dev/null || true
 done
 

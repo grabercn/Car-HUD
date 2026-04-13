@@ -159,6 +159,7 @@ def gemini_understand(text):
 Available actions:
 - show: camera, music, map, system, home, vehicle, help
 - theme: blue, red, green, amber, day, night, auto
+- music: play, pause, next, previous, stop
 - brightness: up, down
 - wifi: scan, connect, disconnect
 - pair/unpair: phone
@@ -314,6 +315,10 @@ def process_command(text):
                 ("theme", "amber"):  "Amber theme",
                 ("theme", "day"):    "Day mode",
                 ("theme", "night"):  "Night mode",
+                ("music", "play"):   "Playing",
+                ("music", "pause"):  "Paused",
+                ("music", "next"):   "Next track",
+                ("music", "previous"): "Previous track",
             }
             reply = RESPONSES.get((action, target), f"{action} {target}")
             return action, target, reply, "learned"
@@ -351,6 +356,10 @@ def process_command(text):
             ("show", "home"):    "Going home",
             ("show", "vehicle"): "Vehicle info",
             ("show", "help"):    "Here are the commands",
+            ("music", "play"):   "Playing",
+            ("music", "pause"):  "Paused",
+            ("music", "next"):   "Next track",
+            ("music", "previous"): "Previous track",
             ("theme", "blue"):   "Blue theme",
             ("theme", "red"):    "Red theme",
             ("theme", "green"):  "Green theme",

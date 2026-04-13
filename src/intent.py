@@ -182,6 +182,26 @@ INTENTS = {
         "phrases": ["calibrate", "voice calibration", "tune voice", "train voice",
                      "calibrate microphone", "setup voice", "mic calibration"],
     },
+    "music_play": {
+        "action": "music", "target": "play",
+        "keywords": {"play": 3, "resume": 3, "start": 2, "music": 1},
+        "phrases": ["play music", "resume music", "start music", "play song", "resume playback"],
+    },
+    "music_pause": {
+        "action": "music", "target": "pause",
+        "keywords": {"pause": 3, "stop": 2, "wait": 1, "music": 1},
+        "phrases": ["pause music", "stop music", "pause playback", "stop playback"],
+    },
+    "music_next": {
+        "action": "music", "target": "next",
+        "keywords": {"next": 3, "skip": 3, "forward": 2, "song": 1, "track": 1},
+        "phrases": ["next song", "skip song", "next track", "skip track", "go forward"],
+    },
+    "music_previous": {
+        "action": "music", "target": "previous",
+        "keywords": {"previous": 3, "back": 3, "last": 2, "song": 1, "track": 1},
+        "phrases": ["previous song", "go back", "last song", "previous track", "last track"],
+    },
     "help": {
         "action": "show", "target": "help",
         "keywords": {"help": 3, "commands": 2, "options": 2, "what": 1,

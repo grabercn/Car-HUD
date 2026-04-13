@@ -139,58 +139,105 @@ def start_pairing():
 
 
 def get_media_metadata():
-    """Read AVRCP media metadata via D-Bus / bluetoothctl."""
-    data = {"playing": False}
+    """Read AVRCP media metadata via D-Bus / dbus-send.
+    More robust parsing for track, artist, album, duration, and position.
+    """
+    data = {"playing": False, "track": "Unknown", "artist": "Unknown", "album": "Unknown",
+            "duration": 0, "progress": 0}
 
     try:
-        # Use bluetoothctl to get media player info
+        # Get all managed objects and find the one with MediaPlayer1
         result = subprocess.run(
-            ["dbus-send", "--system", "--print-reply",
-             "--dest=org.bluez", "/",
+            ["dbus-send", "--system", "--print-reply", "--dest=org.bluez", "/",
              "org.freedesktop.DBus.ObjectManager.GetManagedObjects"],
-            capture_output=True, text=True, timeout=5
+            capture_output=True, text=True, timeout=3
         )
-        output = result.stdout
+        
+        if "org.bluez.MediaPlayer1" not in result.stdout:
+            return data
 
-        # Parse for MediaPlayer1 properties
-        if "org.bluez.MediaPlayer1" in output:
-            data["playing"] = True
+        # We found a player. Now get its properties directly for better parsing.
+        # First, find the player path (e.g., /org/bluez/hci0/dev_XX_XX_XX_XX_XX_XX/player0)
+        player_path = None
+        for line in result.stdout.split("\n"):
+            if "/org/bluez/hci0/dev_" in line and "object path" in line:
+                path = line.split('"')[1]
+                if "player" in path:
+                    player_path = path
+                    break
+        
+        if not player_path:
+            return data
 
-            # Extract track info from dbus output
-            lines = output.split("\n")
+        # Get properties of this specific player
+        prop_res = subprocess.run(
+            ["dbus-send", "--system", "--print-reply", "--dest=org.bluez", player_path,
+             "org.freedesktop.DBus.Properties.GetAll", "string:org.bluez.MediaPlayer1"],
+            capture_output=True, text=True, timeout=3
+        )
+        
+        output = prop_res.stdout
+        data["playing"] = '"playing"' in output or '"active"' in output
+
+        # Helper to extract variant values from dbus-send output
+        def get_val(key, out):
+            lines = out.split("\n")
             for i, line in enumerate(lines):
-                if "Title" in line and i + 1 < len(lines):
-                    val = lines[i + 1].strip().strip('"')
-                    if val and "variant" not in val:
-                        data["track"] = val
-                elif "Artist" in line and i + 1 < len(lines):
-                    val = lines[i + 1].strip().strip('"')
-                    if val and "variant" not in val:
-                        data["artist"] = val
-                elif "Album" in line and i + 1 < len(lines):
-                    val = lines[i + 1].strip().strip('"')
-                    if val and "variant" not in val:
-                        data["album"] = val
-                elif "Duration" in line and i + 1 < len(lines):
-                    try:
-                        val = int(lines[i + 1].strip().split()[-1])
-                        data["duration"] = val / 1000  # ms to sec
-                    except Exception:
-                        pass
-                elif "Position" in line and i + 1 < len(lines):
-                    try:
-                        val = int(lines[i + 1].strip().split()[-1])
-                        data["progress"] = val / 1000
-                    except Exception:
-                        pass
-    except Exception:
-        pass
+                if f'string "{key}"' in line:
+                    # Value is usually in the next few lines
+                    for j in range(i+1, i+5):
+                        if j < len(lines):
+                            if 'string "' in lines[j]:
+                                return lines[j].split('"')[1]
+                            elif 'uint32' in lines[j] or 'int32' in lines[j]:
+                                return int(lines[j].split()[-1])
+            return None
+
+        # Extract metadata dict
+        data["track"] = get_val("Title", output) or "Unknown"
+        data["artist"] = get_val("Artist", output) or "Unknown"
+        data["album"] = get_val("Album", output) or "Unknown"
+        data["duration"] = (get_val("Duration", output) or 0) / 1000.0
+        data["progress"] = (get_val("Position", output) or 0) / 1000.0
+        
+    except Exception as e:
+        log(f"Metadata error: {e}")
 
     return data
 
 
+def media_control(cmd):
+    """Send playback commands (play, pause, next, previous)."""
+    # Find player path first
+    try:
+        result = subprocess.run(
+            ["dbus-send", "--system", "--print-reply", "--dest=org.bluez", "/",
+             "org.freedesktop.DBus.ObjectManager.GetManagedObjects"],
+            capture_output=True, text=True, timeout=2
+        )
+        player_path = None
+        for line in result.stdout.split("\n"):
+            if "/org/bluez/hci0/dev_" in line and "object path" in line:
+                path = line.split('"')[1]
+                if "player" in path:
+                    player_path = path
+                    break
+        
+        if player_path:
+            method = cmd.capitalize() # Play, Pause, Next, Previous
+            subprocess.run([
+                "dbus-send", "--system", "--print-reply", "--dest=org.bluez",
+                player_path, f"org.bluez.MediaPlayer1.{method}"
+            ], capture_output=True, timeout=2)
+            log(f"Media control: {method}")
+            return True
+    except Exception as e:
+        log(f"Media control error: {e}")
+    return False
+
+
 def check_voice_commands():
-    """Check for phone pairing voice commands."""
+    """Check for phone pairing and media playback voice commands."""
     try:
         with open(VOICE_FILE) as f:
             data = json.load(f)
@@ -200,13 +247,25 @@ def check_voice_commands():
             target = data.get("target", "")
             raw = data.get("raw", "").lower()
 
-            # Check for pairing commands
+            # Pairing
             if "pair" in raw or "setup" in raw or "add" in raw:
                 if "phone" in raw or "bluetooth" in raw:
                     return "pair"
             if "remove" in raw or "forget" in raw or "unpair" in raw:
                 if "phone" in raw or "bluetooth" in raw:
                     return "unpair"
+            
+            # Playback controls
+            if action == "music":
+                if target in ["play", "pause", "next", "previous", "stop"]:
+                    return f"media:{target}"
+            
+            # Natural language fallbacks
+            if "next song" in raw or "skip" in raw: return "media:next"
+            if "previous song" in raw or "go back" in raw: return "media:previous"
+            if "pause music" in raw: return "media:pause"
+            if "play music" in raw or "resume" in raw: return "media:play"
+
     except Exception:
         pass
     return None
@@ -214,11 +273,13 @@ def check_voice_commands():
 
 def main():
     log("Music service starting...")
+    bt_cmd("power on")
+    bt_cmd("pairable on")
 
     write_music_data({"playing": False, "paired": False})
 
     while True:
-        # Check voice commands for pairing
+        # Check voice commands for pairing and media control
         cmd = check_voice_commands()
         if cmd == "pair":
             start_pairing()
@@ -229,6 +290,11 @@ def main():
                               "status": "Phone removed"})
             time.sleep(5)
             continue
+        elif cmd and cmd.startswith("media:"):
+            target = cmd.split(":")[1]
+            media_control(target)
+            time.sleep(0.5) # give DBus a moment to update
+            # fall through to update metadata immediately
 
         # Check if we have a paired phone
         mac, name = get_paired_phone()

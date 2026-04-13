@@ -427,9 +427,13 @@ class CarHUD:
         intake = vd.get("INTAKE_TEMP", 0)
         ev = rpm < 100
 
-        # Warnings
+        # Warnings and DTCs
         wy = 0
-        for wt in (obd.get("warnings") or [])[:2]:
+        all_warnings = (obd.get("warnings") or [])[:]
+        for dtc in (obd.get("dtcs") or []):
+            all_warnings.append(f"ENGINE CODE: {dtc}")
+            
+        for wt in all_warnings[:3]:
             txt = self.font_sm.render(wt, True, RED)
             pygame.draw.rect(s, (25, 5, 5), (0, wy, W, txt.get_height() + 4))
             s.blit(txt, ((W - txt.get_width()) // 2, wy + 2))
@@ -621,32 +625,38 @@ class CarHUD:
         t = self.t
         now = datetime.datetime.now()
 
-        if music.get("playing"):
-            track = music.get("track", "Unknown")
-            artist = music.get("artist", "Unknown")
-            max_c = W // 8
-            if len(track) > max_c:
-                track = track[:max_c-2] + ".."
-            if len(artist) > max_c:
-                artist = artist[:max_c-2] + ".."
+        if music.get("paired") or music.get("playing"):
+            track = music.get("track", "Not playing")
+            artist = music.get("artist", "")
+            album = music.get("album", "")
+            phone = music.get("phone", "Phone")
+            
+            # Music icon / Status
+            color = t["primary"] if music.get("playing") else t["text_dim"]
+            pygame.draw.circle(s, color, (15, y + 14), 4)
+            pygame.draw.line(s, color, (19, y + 14), (19, y + 4), 2)
+            
+            if music.get("playing"):
+                # Track + Artist
+                max_c = W // 10
+                tt = self.font_sm.render(track[:max_c], True, t["text_bright"])
+                at_str = f"{artist}" + (f" - {album}" if album and album != "Unknown" else "")
+                at = self.font_xs.render(at_str[:max_c+5], True, t["text_med"])
+                s.blit(tt, (28, y + 2))
+                s.blit(at, (28, y + 3 + tt.get_height()))
 
-            # Music note
-            pygame.draw.circle(s, t["primary"], (12, y + 14), 4)
-            pygame.draw.line(s, t["primary"], (16, y + 14), (16, y + 4), 2)
-
-            tt = self.font_sm.render(track, True, t["text_bright"])
-            at = self.font_xs.render(artist, True, t["text_med"])
-            s.blit(tt, (24, y + 2))
-            s.blit(at, (24, y + 3 + tt.get_height()))
-
-            prog = music.get("progress", 0)
-            dur = music.get("duration", 0)
-            if dur > 0:
-                pbar_y = y + 4 + tt.get_height() + at.get_height() + 3
-                pygame.draw.rect(s, t["border"], (8, pbar_y, W-16, 3), border_radius=1)
-                fw = int((W-16) * min(prog/dur, 1))
-                if fw > 0:
-                    pygame.draw.rect(s, t["primary"], (8, pbar_y, fw, 3), border_radius=1)
+                prog = music.get("progress", 0)
+                dur = music.get("duration", 0)
+                if dur > 0:
+                    pbar_y = y + 4 + tt.get_height() + at.get_height() + 3
+                    pygame.draw.rect(s, t["border"], (10, pbar_y, W-20, 3), border_radius=1)
+                    fw = int((W-20) * min(prog/dur, 1))
+                    if fw > 0:
+                        pygame.draw.rect(s, t["primary"], (10, pbar_y, fw, 3), border_radius=1)
+            else:
+                # Idle state: show connected phone
+                st = self.font_sm.render(f"Bluetooth: {phone}", True, t["text_dim"])
+                s.blit(st, (28, y + 8))
         elif vd:
             ts = self.font_md.render(now.strftime("%I:%M %p"), True, t["text_med"])
             s.blit(ts, (8, y + 4))

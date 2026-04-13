@@ -264,18 +264,31 @@ def main():
 
         progress = max(0.0, min(display_pos, 1.0))
 
+        # Phase labels
+        phase_text = ""
+        if progress < 0.3:
+            phase_text = "System Initialization..."
+        elif progress < 0.6:
+            phase_text = "Loading Northstar Modules..."
+        elif progress < 0.85:
+            phase_text = "Connecting to OBD..."
+        elif hud_ready:
+            phase_text = "Starting Dashboard..."
+        else:
+            phase_text = "Finalizing Services..."
+
+        if phase_text:
+            pt = font_xs.render(phase_text, True, (60, 100, 130))
+            screen.blit(pt, ((dw - pt.get_width()) // 2, bar_y - pt.get_height() - 6))
+
         # --- Draw ---
         screen.blit(splash_surf, (0, 0))
 
-        fill_w = max(0, int(bar_w * progress))
-
-        # Background glow
-        if fill_w > 4:
-            screen.blit(glow_base, (bar_x - 10, glow_y),
-                        area=pygame.Rect(0, 0, fill_w + 20, glow_h))
-
-        # Track
+        # Background Track (dark background bar)
         screen.blit(track_surf, (bar_x, bar_y))
+        
+        # Center marker (subtle tick)
+        pygame.draw.line(screen, (30, 35, 45), (dw // 2, bar_y), (dw // 2, bar_y + bar_h), 1)
 
         # Fill bar — clip from pre-rendered gradient
         if fill_w > r * 2:
