@@ -11,6 +11,7 @@ import json
 import time
 import subprocess
 import glob
+import threading
 
 RECORD_DIR = "/home/chrismslist/northstar/dashcam"
 SIGNAL_FILE = "/tmp/car-hud-dashcam-data"
@@ -18,27 +19,75 @@ VOICE_FILE = "/tmp/car-hud-voice-signal"
 OBD_FILE = "/tmp/car-hud-obd-data"
 LOG_FILE = "/tmp/car-hud-dashcam.log"
 CHUNK_SECONDS = 300   # 5 min per chunk
-MAX_SIZE_MB = 2048    # 2GB max — rotate oldest when exceeded
-MAX_CHUNKS = 50       # hard cap
-VIDEO_DEV = "/dev/video0"
+MAX_SIZE_MB = 4096    # Increased to 4GB for dual cams
+MAX_CHUNKS = 100       # Increased for dual cams
 
 
 def log(msg):
     ts = time.strftime("%H:%M:%S")
-    print(f"[{ts}] {msg}", flush=True)
+    line = f"[{ts}] {msg}"
+    print(line, flush=True)
+    try:
+        with open(LOG_FILE, "a") as f:
+            f.write(line + "\n")
+    except Exception:
+        pass
 
 
-def write_status(recording, chunks=0, size_mb=0, mode="auto"):
+def write_status(recording, chunks=0, size_mb=0, mode="auto", cam_count=0):
     try:
         with open(SIGNAL_FILE, "w") as f:
             json.dump({"recording": recording, "chunks": chunks,
                        "size_mb": round(size_mb, 1), "mode": mode,
+                       "cam_count": cam_count,
                        "timestamp": time.time()}, f)
     except Exception:
         pass
 
 
+def find_cameras():
+    """Find all valid video devices."""
+    cams = []
+    for dev in glob.glob("/dev/video*"):
+        try:
+            # Test if it's a real capture device (not metadata)
+            r = subprocess.run(["v4l2-ctl", "--device", dev, "--all"], 
+                               capture_output=True, text=True, timeout=2)
+            if "Video Capture" in r.stdout and "Metadata Capture" not in r.stdout:
+                cams.append(dev)
+        except Exception:
+            pass
+    return sorted(list(set(cams)))
+
+
+def record_from_cam(cam_dev, output, duration):
+    """Record a single chunk from one camera."""
+    try:
+        # Try hardware encoder first
+        cmd = [
+            "ffmpeg", "-f", "v4l2",
+            "-video_size", "640x480", "-framerate", "10",
+            "-i", cam_dev,
+            "-t", str(duration),
+            "-c:v", "h264_v4l2m2m", "-b:v", "500k",
+            "-an", "-y", output
+        ]
+        proc = subprocess.run(cmd, capture_output=True, timeout=duration + 30)
+        
+        if proc.returncode != 0:
+            # Fallback to software encoder
+            cmd[9] = "5" # lower framerate
+            cmd[12] = "libx264"
+            cmd[13] = "-preset"
+            cmd.insert(14, "ultrafast")
+            cmd.insert(15, "-crf")
+            cmd.insert(16, "28")
+            subprocess.run(cmd, capture_output=True, timeout=duration + 30)
+    except Exception as e:
+        log(f"Error recording {cam_dev}: {e}")
+
 def rotate_chunks():
+    # ... (unchanged)
     files = sorted(glob.glob(os.path.join(RECORD_DIR, "chunk_*.mp4")))
     total_mb = get_total_size_mb()
     while len(files) > MAX_CHUNKS or total_mb > MAX_SIZE_MB:
@@ -99,12 +148,6 @@ def main():
     os.makedirs(RECORD_DIR, exist_ok=True)
     log("Dashcam service starting...")
 
-    if not os.path.exists(VIDEO_DEV):
-        log(f"No webcam at {VIDEO_DEV}")
-        write_status(False, mode="no camera")
-        time.sleep(30)
-        return
-
     manual_override = None  # None=auto, "on"=force record, "off"=force stop
     last_voice_check = 0
 
@@ -120,13 +163,11 @@ def main():
             elif cmd == "stop":
                 manual_override = "off"
                 log("Voice: manual recording OFF")
-            elif cmd == "preview":
-                # Preview handled by HUD — just note it
-                pass
 
         # Decide whether to record
         driving = is_driving()
         should_record = False
+        mode = "auto"
 
         if manual_override == "on":
             should_record = True
@@ -137,64 +178,50 @@ def main():
         elif driving:
             should_record = True
             mode = "driving"
-            manual_override = None  # clear manual when auto kicks in
+            manual_override = None
         else:
-            # Not driving, no manual override — check if OBD is even connected
-            # If no OBD, default to recording (we don't know if we're driving)
             try:
                 with open(OBD_FILE) as f:
                     obd = json.load(f)
                     if not obd.get("connected"):
-                        should_record = True  # no OBD = always record
+                        should_record = True
                         mode = "auto"
                     else:
                         should_record = False
                         mode = "parked"
             except Exception:
-                should_record = True  # no OBD data = always record
+                should_record = True
                 mode = "auto"
 
-        if not should_record:
+        cams = find_cameras()
+        cam_count = len(cams)
+
+        if not should_record or cam_count == 0:
             chunks = len(glob.glob(os.path.join(RECORD_DIR, "chunk_*.mp4")))
-            write_status(False, chunks, get_total_size_mb(), mode)
+            write_status(False, chunks, get_total_size_mb(), mode, cam_count)
             time.sleep(5)
             continue
 
-        # Record a chunk
+        # Record a chunk from each camera in parallel
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        output = os.path.join(RECORD_DIR, f"chunk_{timestamp}.mp4")
         chunks = len(glob.glob(os.path.join(RECORD_DIR, "chunk_*.mp4")))
-        write_status(True, chunks, get_total_size_mb(), mode)
-        log(f"Recording: {os.path.basename(output)} ({mode})")
-
-        try:
-            proc = subprocess.run([
-                "ffmpeg", "-f", "v4l2",
-                "-video_size", "640x480", "-framerate", "10",
-                "-i", VIDEO_DEV,
-                "-t", str(CHUNK_SECONDS),
-                "-c:v", "h264_v4l2m2m", "-b:v", "500k",
-                "-an", "-y", output
-            ], capture_output=True, timeout=CHUNK_SECONDS + 30)
-
-            if proc.returncode != 0:
-                subprocess.run([
-                    "ffmpeg", "-f", "v4l2",
-                    "-video_size", "640x480", "-framerate", "5",
-                    "-i", VIDEO_DEV,
-                    "-t", str(CHUNK_SECONDS),
-                    "-c:v", "libx264", "-preset", "ultrafast",
-                    "-crf", "28", "-an", "-y", output
-                ], capture_output=True, timeout=CHUNK_SECONDS + 30)
-        except subprocess.TimeoutExpired:
-            log("Recording timeout")
-        except Exception as e:
-            log(f"Recording error: {e}")
-            time.sleep(10)
-            continue
+        write_status(True, chunks, get_total_size_mb(), mode, cam_count)
+        
+        log(f"Recording {cam_count} cam(s) for {CHUNK_SECONDS}s ({mode})")
+        
+        threads = []
+        for i, cam in enumerate(cams):
+            output = os.path.join(RECORD_DIR, f"chunk_{timestamp}_cam{i}.mp4")
+            t = threading.Thread(target=record_from_cam, args=(cam, output, CHUNK_SECONDS))
+            t.start()
+            threads.append(t)
+            
+        # Wait for all to finish
+        for t in threads:
+            t.join()
 
         rotate_chunks()
-        log(f"Chunk done. {mode}")
+        log(f"Chunks done. {mode}")
 
 
 if __name__ == "__main__":

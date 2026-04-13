@@ -158,67 +158,61 @@ def calibrate(mic_card, mic_name, rounds=2):
 
     gain_scores = {}
     gain_texts = {}
-    for gain in [2, 4, 6, 8]:  # 4 gains only — Pi is slow
+    gains = [2, 4, 6, 8]
+    for gain in gains:
         gain_scores[gain] = 0
         gain_texts[gain] = []
 
-    for r in range(rounds):
-        pct = int((r / rounds) * 100)
-        log(f"  Round {r+1}/{rounds}...")
-        write_status("recording", pct, f"Playing sample...",
-                     mic=mic_name, round_num=r+1, total_rounds=rounds)
+    total_steps = len(gains) * rounds
+    current_step = 0
 
-        # Play voice sample through speaker while recording from mic
-        rec_file = f"{CALIB_DIR}/calib_{mic_card}_{r}.wav"
-        # Start recording FIRST
-        rec_dur = play_duration + 2
-        rec_proc = subprocess.Popen(
-            ["arecord", "-D", f"plughw:{mic_card},0",
-             "-d", str(rec_dur),
-             "-f", "S16_LE", "-r", str(SAMPLE_RATE), "-c", "1", rec_file],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        time.sleep(0.3)
-
-        # Play the trimmed sample (blocks until done)
-        subprocess.run(["aplay", "-D", "default", play_file],
-                       capture_output=True, timeout=play_duration + 5)
-
-        # Wait for recording to fully finish
-        try:
-            rec_proc.wait(timeout=rec_dur + 5)
-        except subprocess.TimeoutExpired:
-            rec_proc.kill()
-
-        # Small gap between rounds
-        time.sleep(0.5)
-
-        # Load recorded samples
-        try:
-            w = wave.open(rec_file)
-            frames = w.readframes(w.getnframes())
-            samples = list(struct.unpack(f"<{len(frames)//2}h", frames))
-            w.close()
-            os.remove(rec_file)
-        except Exception:
-            log(f"  Recording failed round {r+1}")
-            continue
-
-        rms = math.sqrt(sum(s*s for s in samples[:500]) / 500)
-        log(f"  Recorded RMS: {rms:.0f}")
-
-        # Test each gain level
-        num_gains = len(gain_scores)
-        for gi, gain in enumerate(sorted(gain_scores)):
-            # Accurate progress: (round * num_gains + gain_index) / (total_rounds * num_gains)
-            step = r * num_gains + gi
-            total_steps = rounds * num_gains
-            pct = int((step / total_steps) * 100)
-            write_status("testing", pct, f"Gain {gain}x...",
+    for gain in gains:
+        for r in range(rounds):
+            current_step += 1
+            pct = int(((current_step - 1) / total_steps) * 100)
+            
+            log(f"  Testing gain {gain}x, round {r+1}/{rounds}...")
+            write_status("recording", pct, f"Playing sample (Gain {gain}x)...",
                          mic=mic_name, gain=gain, round_num=r+1, total_rounds=rounds)
-            text, score = test_gain(samples, gain)
-            gain_scores[gain] += score
-            gain_texts[gain].append(text[:80])
-            log(f"    gain={gain}x: +{score} (total={gain_scores[gain]}) '{text[:50]}'")
+
+            # Play voice sample through speaker while recording from mic
+            rec_file = f"{CALIB_DIR}/calib_{mic_card}_{gain}_{r}.wav"
+            rec_dur = play_duration + 2
+            rec_proc = subprocess.Popen(
+                ["arecord", "-D", f"plughw:{mic_card},0",
+                 "-d", str(rec_dur),
+                 "-f", "S16_LE", "-r", str(SAMPLE_RATE), "-c", "1", rec_file],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(0.4)
+
+            # Play the trimmed sample
+            subprocess.run(["aplay", "-D", "default", play_file],
+                           capture_output=True, timeout=play_duration + 5)
+
+            try:
+                rec_proc.wait(timeout=rec_dur + 5)
+            except subprocess.TimeoutExpired:
+                rec_proc.kill()
+
+            # Load and test immediately
+            try:
+                w = wave.open(rec_file)
+                frames = w.readframes(w.getnframes())
+                samples = list(struct.unpack(f"<{len(frames)//2}h", frames))
+                w.close()
+                os.remove(rec_file)
+                
+                write_status("testing", pct + 2, f"Analyzing {gain}x...",
+                             mic=mic_name, gain=gain, round_num=r+1, total_rounds=rounds)
+                
+                text, score = test_gain(samples, gain)
+                gain_scores[gain] += score
+                gain_texts[gain].append(text[:80])
+                log(f"    round {r+1} score: +{score} '{text[:40]}'")
+            except Exception as e:
+                log(f"    round {r+1} failed: {e}")
+
+            time.sleep(0.5)
 
     # Pick best gain
     best_gain = max(gain_scores, key=gain_scores.get)

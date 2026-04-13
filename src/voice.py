@@ -86,6 +86,8 @@ def play_sound(path):
 def play_wake(): play_sound("/home/chrismslist/northstar/chime_wake.wav")
 def play_ok(): play_sound("/home/chrismslist/northstar/chime_ok.wav")
 def play_err(): play_sound("/home/chrismslist/northstar/chime_err.wav")
+def play_think(): play_sound("/home/chrismslist/northstar/chime_think.wav")
+def play_timeout(): play_sound("/home/chrismslist/northstar/chime_err.wav") # Reuse err for timeout
 def speak(text): smart_tts(text)
 
 
@@ -357,6 +359,7 @@ def main():
             # Flush accumulated text after timeout — this is our best shot
             if accumulated_text and accumulate_timeout and time.time() > accumulate_timeout:
                 log(f"Accumulated: '{accumulated_text}'")
+                play_think()
                 result = process_text(accumulated_text)
                 if not result:
                     # Command failed — still try, Gemini might understand
@@ -368,7 +371,7 @@ def main():
                         play_ok()
                         execute(cmd, accumulated_text)
                     else:
-                        play_err()
+                        play_timeout()
                         signal_hud("status", "timeout")
                 awaiting = False
                 accumulated_text = ""
@@ -379,7 +382,9 @@ def main():
             if pt:
                 try:
                     with open("/tmp/car-hud-transcript", "w") as f:
-                        json.dump({"partial": pt, "wake": awaiting,
+                        # Use "..." to indicate active listening if text is empty
+                        display_text = pt if pt.strip() else "..."
+                        json.dump({"partial": display_text, "wake": awaiting,
                                     "time": time.time()}, f)
                 except Exception: pass
                 if not awaiting and not wake_chimed and check_wake_word(pt):
@@ -392,6 +397,7 @@ def main():
 
             if awaiting and time.time() > cmd_timeout:
                 awaiting = False
+                play_timeout()
                 signal_hud("status", "timeout")
 
     except KeyboardInterrupt:

@@ -217,6 +217,10 @@ class CarHUD:
             pass
         self._build_tinted_logo()
 
+        # Smoothed data for animations
+        self.smooth_data = {}
+        self.last_update = time.time()
+
     def _build_tinted_logo(self):
         """Tint the Honda logo to match current theme color."""
         if not self.honda_logo_pil or self._logo_theme == self.theme_name:
@@ -405,12 +409,13 @@ class CarHUD:
         W, H = self.width, self.height
         s = self.surf
         t = self.t
-        vd = obd.get("data", {})
+        vd = self.smooth_data  # Use smoothed data for gauges
         now = datetime.datetime.now()
 
+        # Divider line
         pygame.draw.line(s, t["primary_dim"], (0, 0), (W, 0), 1)
 
-        # Data
+        # Data extraction from smoothed dict
         rpm = vd.get("RPM", 0)
         speed = vd.get("SPEED", 0) * 0.621371
         load = vd.get("ENGINE_LOAD", 0)
@@ -432,115 +437,124 @@ class CarHUD:
 
         # ── Top strip: time | EV/GAS badge | volts ──
         ty = 2 + wy
-        s.blit(self.font_sm.render(now.strftime("%I:%M"), True, t["text_dim"]), (6, ty))
+        s.blit(self.font_md.render(now.strftime("%I:%M"), True, t["text_bright"]), (10, ty))
+        
+        # EV/GAS status badge - bigger and more centered
         mc = GREEN if ev else t["primary"]
-        pygame.draw.rect(s, mc, (W//2 - 15, ty, 30, 13), border_radius=3)
-        ml = self.font_xs.render("EV" if ev else "GAS", True, (0, 0, 0))
-        s.blit(ml, (W//2 - ml.get_width()//2, ty + 2))
-        vl = self.font_sm.render(f"{volts:.1f}V", True, t["text_dim"])
-        s.blit(vl, (W - vl.get_width() - 6, ty))
+        badge_w, badge_h = 45, 18
+        pygame.draw.rect(s, mc, (W//2 - badge_w//2, ty, badge_w, badge_h), border_radius=4)
+        ml = self.font_sm.render("EV" if ev else "GAS", True, (0, 0, 0))
+        s.blit(ml, (W//2 - ml.get_width()//2, ty + (badge_h - ml.get_height())//2))
+        
+        vl = self.font_md.render(f"{volts:.1f}V", True, t["text_med"])
+        s.blit(vl, (W - vl.get_width() - 10, ty))
 
-        # ── Left pillar: Fuel ──
-        px = 8
-        ph = 62
-        py = ty + 18
-        pygame.draw.rect(s, t["border"], (px, py, 10, ph), border_radius=3)
+        # ── Side Pillars: Fuel (Left) and HV Battery (Right) ──
+        # Move them to the absolute edges to maximize central space
+        ph = 140
+        py = ty + 30
+        
+        # Fuel (Left)
+        px = 4
+        pygame.draw.rect(s, t["border"], (px, py, 12, ph), border_radius=4)
         fh = max(0, int(ph * fuel / 100))
         fc = GREEN if fuel > 20 else AMBER if fuel > 10 else RED
         if fh > 0:
-            pygame.draw.rect(s, fc, (px, py + ph - fh, 10, fh), border_radius=3)
-        s.blit(self.font_xs.render("F", True, t["text_dim"]), (px + 2, py - 10))
-        s.blit(self.font_xs.render(f"{fuel:.0f}%", True, fc), (px - 2, py + ph + 3))
+            pygame.draw.rect(s, fc, (px, py + ph - fh, 12, fh), border_radius=4)
+        s.blit(self.font_xs.render("FUEL", True, t["text_dim"]), (px + 16, py))
+        s.blit(self.font_sm.render(f"{fuel:.0f}%", True, fc), (px + 16, py + 14))
         fuel_mi = int(fuel / 100 * 12.8 * 40)
-        s.blit(self.font_xs.render(f"{fuel_mi}mi", True, t["text_med"]), (px + 14, py + 4))
+        s.blit(self.font_xs.render(f"{fuel_mi}mi", True, t["text_med"]), (px + 16, py + ph - 12))
 
-        # ── Right pillar: HV Battery ──
-        bx = W - 18
-        pygame.draw.rect(s, t["border"], (bx, py, 10, ph), border_radius=3)
+        # HV Battery (Right)
+        bx = W - 16
+        pygame.draw.rect(s, t["border"], (bx, py, 12, ph), border_radius=4)
         bh_fill = max(0, int(ph * hv / 100))
         bc = GREEN if hv > 30 else AMBER if hv > 15 else RED
         if bh_fill > 0:
-            pygame.draw.rect(s, bc, (bx, py + ph - bh_fill, 10, bh_fill), border_radius=3)
-        s.blit(self.font_xs.render("B", True, t["text_dim"]), (bx + 2, py - 10))
-        hv_t = self.font_xs.render(f"{hv:.0f}%", True, bc)
-        s.blit(hv_t, (bx - hv_t.get_width() + 10, py + ph + 3))
+            pygame.draw.rect(s, bc, (bx, py + ph - bh_fill, 12, bh_fill), border_radius=4)
+        s.blit(self.font_xs.render("BATT", True, t["text_dim"]), (bx - 35, py))
+        s.blit(self.font_sm.render(f"{hv:.0f}%", True, bc), (bx - 35, py + 14))
         ev_mi = int(hv / 100 * 15)
         ev_t = self.font_xs.render(f"{ev_mi}mi", True, GREEN)
-        s.blit(ev_t, (bx - ev_t.get_width() - 4, py + 4))
+        s.blit(ev_t, (bx - ev_t.get_width() - 4, py + ph - 12))
 
-        # ── Central speedometer ──
+        # ── Central speedometer (Larger) ──
         cx = W // 2
-        cy = py + 32
-        r = 52
+        cy = py + 75
+        r = 85  # Increased from 52
         sp_pct = min(speed / 140, 1.0)
-        self.draw_arc_gauge(cx, cy, r, 7, sp_pct, t["primary"])
-        self.draw_arc_gauge(cx, cy, r - 10, 2, sp_pct, t["primary_dim"])
-        # RPM as thin inner ring
+        self.draw_arc_gauge(cx, cy, r, 10, sp_pct, t["primary"])
+        self.draw_arc_gauge(cx, cy, r - 12, 3, sp_pct, t["primary_dim"])
+        
+        # RPM as inner ring
         rpm_pct = min(rpm / 7000, 1.0)
         rc = t["primary_dim"] if rpm < 3000 else AMBER if rpm < 5500 else RED
-        self.draw_arc_gauge(cx, cy, r - 15, 2, rpm_pct, rc)
+        self.draw_arc_gauge(cx, cy, r - 20, 3, rpm_pct, rc)
 
         sp_txt = self.font_xxl.render(f"{int(speed)}", True, t["primary"])
-        s.blit(sp_txt, (cx - sp_txt.get_width()//2, cy - sp_txt.get_height() + 2))
-        s.blit(self.font_xs.render("MPH", True, t["text_dim"]),
-               (cx - 10, cy + 8))
+        s.blit(sp_txt, (cx - sp_txt.get_width()//2, cy - sp_txt.get_height() + 15))
+        s.blit(self.font_md.render("MPH", True, t["text_dim"]), (cx - 18, cy + 12))
 
-        # ── Power/Charge meter ──
-        pfy = cy + 22
-        pfw = W - 50
-        pfx = 25
-        pfh = 7
+        # ── Power/Charge meter (Repositioned) ──
+        pfy = cy + 45
+        pfw = 200
+        pfx = (W - pfw) // 2
+        pfh = 8
         pfcx = pfx + pfw // 2
 
-        pygame.draw.rect(s, t["border"], (pfx, pfy, pfw, pfh), border_radius=3)
-        pygame.draw.line(s, t["text_dim"], (pfcx, pfy - 2), (pfcx, pfy + pfh + 2))
+        pygame.draw.rect(s, t["border"], (pfx, pfy, pfw, pfh), border_radius=4)
+        pygame.draw.line(s, t["text_bright"], (pfcx, pfy - 3), (pfcx, pfy + pfh + 3), 2)
 
-        s.blit(self.font_xs.render("CHG", True, GREEN), (pfx, pfy - 10))
+        s.blit(self.font_xs.render("CHG", True, GREEN), (pfx, pfy - 12))
         pw_l = self.font_xs.render("PWR", True, t["primary"])
-        s.blit(pw_l, (pfx + pfw - pw_l.get_width(), pfy - 10))
+        s.blit(pw_l, (pfx + pfw - pw_l.get_width(), pfy - 12))
 
         if ev:
             pwr = min(throttle / 80, 1.0)
             fw = int((pfw // 2) * pwr)
             if fw > 1:
-                pygame.draw.rect(s, GREEN, (pfcx, pfy, fw, pfh), border_radius=3)
+                pygame.draw.rect(s, GREEN, (pfcx, pfy, fw, pfh), border_radius=4)
         else:
             pwr = min(load / 100, 1.0)
             fw = int((pfw // 2) * pwr)
             if fw > 1:
                 pc = t["primary"] if pwr < 0.6 else AMBER if pwr < 0.85 else RED
-                pygame.draw.rect(s, pc, (pfcx, pfy, fw, pfh), border_radius=3)
+                pygame.draw.rect(s, pc, (pfcx, pfy, fw, pfh), border_radius=4)
             if throttle < 5 and rpm > 800:
                 rw = int((pfw // 2) * 0.15)
-                pygame.draw.rect(s, GREEN, (pfcx - rw, pfy, rw, pfh), border_radius=3)
+                pygame.draw.rect(s, GREEN, (pfcx - rw, pfy, rw, pfh), border_radius=4)
 
-        # ── Compact data bars ──
-        dy = pfy + 16
-        dh = 5
-        pad = 6
-        hw = W // 2 - pad * 2 - 2
+        # ── Lower Data Grid (2x2) ──
+        dy = pfy + 25
+        dw = 120
+        dh = 6
+        pad_x = 80
+        pad_y = 22
 
+        # Column 1
         cc = t["primary"] if cool < 100 else AMBER if cool < 110 else RED
-        self.draw_hbar(pad, dy + 10, hw, dh, min(cool/130, 1), cc, "COOL", f"{cool:.0f}C")
-        self.draw_hbar(W//2+2+pad, dy + 10, hw, dh, min(rpm/7000, 1),
-                       t["primary_dim"] if rpm < 3000 else AMBER, "RPM", f"{int(rpm)}")
-
+        self.draw_hbar(pad_x, dy, dw, dh, min(cool/130, 1), cc, "COOLANT", f"{cool:.0f}C")
         lc = t["primary"] if load < 70 else AMBER if load < 90 else RED
-        self.draw_hbar(pad, dy + 28, hw, dh, load/100, lc, "LOAD", f"{load:.0f}%")
-        self.draw_hbar(W//2+2+pad, dy + 28, hw, dh, throttle/100,
-                       t["accent"], "THRTL", f"{throttle:.0f}%")
+        self.draw_hbar(pad_x, dy + pad_y, dw, dh, load/100, lc, "ENGINE LOAD", f"{load:.0f}%")
+
+        # Column 2
+        self.draw_hbar(W - pad_x - dw, dy, dw, dh, min(rpm/7000, 1),
+                       t["primary_dim"] if rpm < 3000 else AMBER, "RPM", f"{int(rpm)}")
+        self.draw_hbar(W - pad_x - dw, dy + pad_y, dw, dh, throttle/100,
+                       t["accent"], "THROTTLE", f"{throttle:.0f}%")
 
         # ── Range + music ──
-        ry = dy + 44
+        ry = dy + pad_y * 2 + 10
         total = fuel_mi + ev_mi
         rt = self.font_sm.render(f"Range: {total}mi", True, t["text_bright"])
-        s.blit(rt, (pad, ry))
+        s.blit(rt, (60, ry))
         it_t = self.font_xs.render(f"Air:{intake:.0f}C", True, t["text_dim"])
-        s.blit(it_t, (W - it_t.get_width() - pad, ry + 2))
+        s.blit(it_t, (W - it_t.get_width() - 60, ry + 2))
 
-        ly = ry + 16
-        pygame.draw.line(s, t["border_lite"], (4, ly), (W - 4, ly))
-        self.draw_lower_section(ly + 3, music, vd)
+        ly = ry + 20
+        pygame.draw.line(s, t["border_lite"], (10, ly), (W - 10, ly))
+        self.draw_lower_section(ly + 4, music, vd)
 
     def draw_system_page(self, stats, music):
         W, H = self.width, self.height
@@ -720,20 +734,23 @@ class CarHUD:
         # CAM status — recording=red pulse, service running=primary, off=dim
         cam_c = t["text_dim"]
         cam_recording = False
+        cam_count = 0
         try:
             with open("/tmp/car-hud-dashcam-data") as f:
                 cd = json.load(f)
                 if time.time() - cd.get("timestamp", 0) < 60:
+                    cam_count = cd.get("cam_count", 0)
                     if cd.get("recording"):
                         cam_recording = True
-                        cam_c = RED  # recording = red
+                        cam_c = RED
                     else:
-                        cam_c = t["primary"]  # service up, not recording
+                        cam_c = t["primary"] if cam_count > 0 else t["text_dim"]
         except Exception:
             pass
-        # Also check if camera device exists
-        if cam_c == t["text_dim"] and os.path.exists("/dev/video0"):
-            cam_c = AMBER  # camera present but service not writing
+        # Also check if camera device exists if service status is old/missing
+        if cam_count == 0 and os.path.exists("/dev/video0"):
+            cam_count = 1
+            if cam_c == t["text_dim"]: cam_c = AMBER
 
         modules = [("AUD", ac), ("OBD", oc), ("MUS", mc),
                    ("NET", nc), ("CAM", cam_c), ("LUX", t["text_dim"])]
@@ -743,7 +760,13 @@ class CarHUD:
         net_idx = -1
         for i, (name, color) in enumerate(modules):
             mx = 6 + i * mw
-            pygame.draw.circle(s, color, (mx + mw // 2, my + 3), 3)
+            # CAM special drawing: half circle for 1 cam, full for 2+
+            if name == "CAM" and cam_count == 1:
+                # Draw half-filled circle (top half)
+                pygame.draw.arc(s, color, (mx + mw // 2 - 3, my, 6, 6), 0, math.pi, 3)
+            else:
+                pygame.draw.circle(s, color, (mx + mw // 2, my + 3), 3)
+            
             mt = self.font_xs.render(name, True, color)
             s.blit(mt, (mx + (mw - mt.get_width()) // 2, my + 9))
             if name == "NET":
@@ -1298,6 +1321,16 @@ class CarHUD:
             stats = self.get_system_stats()
             obd = self.get_obd_data()
             music = self.get_music_data()
+
+            # Smooth OBD data for animations
+            target_data = obd.get("data", {})
+            for k, v in target_data.items():
+                if k not in self.smooth_data:
+                    self.smooth_data[k] = v
+                else:
+                    # Faster smoothing for RPM/Speed, slower for temps
+                    factor = 0.25 if k in ["RPM", "SPEED", "ENGINE_LOAD", "THROTTLE_POS"] else 0.08
+                    self.smooth_data[k] = self.smooth_data[k] + (v - self.smooth_data[k]) * factor
 
             # Reload theme from file every 2 seconds (for voice commands)
             theme_check_timer += 1
