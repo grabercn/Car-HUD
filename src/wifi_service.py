@@ -52,7 +52,7 @@ def write_status(data):
     # Control Pi PWR LED — on=connected, off=disconnected
     try:
         state = data.get("state", "")
-        led = "1" if state == "connected" else "0"
+        led = "1" if state in ("connected", "tethered") else "0"
         with open("/sys/class/leds/PWR/brightness", "w") as f:
             f.write(led)
     except Exception:
@@ -62,9 +62,9 @@ _last_wifi_state = "disconnected"
 
 def check_play_wifi_chime(state):
     global _last_wifi_state
-    if state == "connected" and _last_wifi_state != "connected":
+    if state in ("connected", "tethered") and _last_wifi_state not in ("connected", "tethered"):
         try:
-            subprocess.Popen(["aplay", "-D", "plughw:1,0",
+            subprocess.Popen(["aplay", "-D", "default",
                              "/home/chrismslist/car-hud/chime_wifi.wav"],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
@@ -321,7 +321,7 @@ def main():
 
             tether = is_tethered()
             if tether:
-                status = {"state": "tethered", "ssid": "USB Tether", "signal": 100, "tether_iface": tether}
+                status = {"state": "tethered", "ssid": "Tether", "signal": 100, "tether_iface": tether}
             else:
                 status = {
                 "state": state,
