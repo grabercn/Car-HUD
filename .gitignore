@@ -1,0 +1,36 @@
+# Secrets
+.keys.json
+*.key
+
+# Runtime data
+.theme
+.boot_times.json
+.audio_params.json
+.voice_profile.json
+.word_corrections.json
+.response_cache.json
+.known_networks.json
+.version
+.update_pending
+
+# Generated files
+*.wav
+*.png
+*.bmp
+splash.png
+honda_logo.png
+
+# Dashcam footage
+dashcam/
+
+# Models
+vosk-model/
+sherpa-onnx-*/
+
+# Python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+Thumbs.db
