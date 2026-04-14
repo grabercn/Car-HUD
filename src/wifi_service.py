@@ -64,7 +64,7 @@ def check_play_wifi_chime(state):
     global _last_wifi_state
     if state == "connected" and _last_wifi_state != "connected":
         try:
-            subprocess.Popen(["aplay", "-D", "default",
+            subprocess.Popen(["aplay", "-D", "plughw:1,0",
                              "/home/chrismslist/car-hud/chime_wifi.wav"],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
@@ -118,6 +118,29 @@ def get_signal_strength():
                     pass
     return 0
 
+
+
+def is_tethered():
+    """Check if USB tethering is active (iPhone/Android)."""
+    import glob
+    for iface in ['eth1', 'usb0', 'enp0s20u1']:
+        try:
+            with open(f'/sys/class/net/{iface}/operstate') as f:
+                if f.read().strip() == 'up':
+                    return iface
+        except Exception:
+            pass
+    # Also check for any non-eth0 ethernet interface that's up
+    for path in glob.glob('/sys/class/net/*/operstate'):
+        iface = path.split('/')[-2]
+        if iface.startswith(('eth', 'usb', 'enp')) and iface != 'eth0':
+            try:
+                with open(path) as f:
+                    if f.read().strip() == 'up':
+                        return iface
+            except Exception:
+                pass
+    return None
 
 def scan_networks():
     """Scan for available WiFi networks."""
@@ -296,7 +319,11 @@ def main():
             ssid = get_current_ssid()
             signal = get_signal_strength() if state == "connected" else 0
 
-            status = {
+            tether = is_tethered()
+            if tether:
+                status = {"state": "tethered", "ssid": "USB Tether", "signal": 100, "tether_iface": tether}
+            else:
+                status = {
                 "state": state,
                 "ssid": ssid or "",
                 "signal": signal,

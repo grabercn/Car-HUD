@@ -619,44 +619,79 @@ class CarHUD:
         t = self.t
         now = datetime.datetime.now()
 
-        if music.get("paired") or music.get("playing"):
-            track = music.get("track", "Not playing")
+        if music.get("playing"):
+            track = music.get("track", "")
             artist = music.get("artist", "")
             album = music.get("album", "")
-            phone = music.get("phone", "Phone")
-            
-            # Music icon / Status
-            color = t["primary"] if music.get("playing") else t["text_dim"]
-            # Draw a mini "Note" icon
-            pygame.draw.circle(s, color, (15, y + 12), 3)
-            pygame.draw.line(s, color, (18, y + 12), (18, y + 4), 2)
-            pygame.draw.line(s, color, (18, y + 4), (22, y + 6), 2)
-            
-            if music.get("playing"):
-                # Track + Artist
-                max_c = W // 10
-                self.draw_glow_text(track[:max_c], self.font_md, t["text_bright"], (28, y - 1))
-                at_str = f"{artist}" + (f" - {album}" if album and album != "Unknown" else "")
-                self.draw_glow_text(at_str[:max_c+8], self.font_xs, t["text_med"], (28, y + 14))
+            device = music.get("device", "")
 
-                prog = music.get("progress", 0)
-                dur = music.get("duration", 0)
-                if dur > 0:
-                    pbar_y = y + 26
-                    pygame.draw.rect(s, t["border"], (10, pbar_y, W-20, 2), border_radius=1)
-                    fw = int((W-20) * min(prog/dur, 1))
-                    if fw > 0:
-                        pygame.draw.rect(s, t["primary"], (10, pbar_y, fw, 2), border_radius=1)
-            else:
-                # Idle state: show connected phone
-                self.draw_glow_text(f"CONNECTED: {phone}", self.font_sm, t["text_dim"], (28, y + 5))
+            # Album art (left side)
+            art_x = 4
+            art_size = 32
+            art_loaded = False
+            try:
+                art_file = "/tmp/car-hud-album-art.jpg"
+                if os.path.exists(art_file) and time.time() - os.path.getmtime(art_file) < 300:
+                    from PIL import Image as PILImage
+                    pil = PILImage.open(art_file).convert("RGB")
+                    pil = pil.resize((art_size, art_size), PILImage.LANCZOS)
+                    art_surf = pygame.image.fromstring(pil.tobytes(), (art_size, art_size), "RGB")
+                    s.blit(art_surf, (art_x, y))
+                    art_loaded = True
+            except Exception:
+                pass
+
+            if not art_loaded:
+                # Fallback: note icon
+                pygame.draw.rect(s, t["border"], (art_x, y, art_size, art_size), border_radius=4)
+                pygame.draw.circle(s, t["primary"], (art_x + 12, y + 22), 5)
+                pygame.draw.line(s, t["primary"], (art_x + 17, y + 22), (art_x + 17, y + 8), 2)
+
+            # Track info (right of art)
+            tx = art_x + art_size + 6
+            tw = W - tx - 4
+            max_c = tw // 6
+
+            tt = self.font_sm.render(track[:max_c], True, t["text_bright"])
+            s.blit(tt, (tx, y + 1))
+
+            at = self.font_xs.render(artist[:max_c], True, t["text_med"])
+            s.blit(at, (tx, y + 14))
+
+            # Device source
+            dev_name = music.get("device", "")
+            if dev_name:
+                dt = self.font_xs.render(dev_name, True, t["text_dim"])
+                s.blit(dt, (tx + tw - dt.get_width(), y + 2))
+
+            # Progress bar
+            prog = music.get("progress", 0)
+            dur = music.get("duration", 0)
+            if dur > 0:
+                pbar_y = y + 27
+                pygame.draw.rect(s, t["border"], (tx, pbar_y, tw, 3), border_radius=1)
+                fw = int(tw * min(prog / dur, 1))
+                if fw > 0:
+                    pygame.draw.rect(s, t["primary"], (tx, pbar_y, fw, 3), border_radius=1)
+                # Time
+                prog_m, prog_s = int(prog) // 60, int(prog) % 60
+                dur_m, dur_s = int(dur) // 60, int(dur) % 60
+                time_t = self.font_xs.render(f"{prog_m}:{prog_s:02d}/{dur_m}:{dur_s:02d}", True, t["text_dim"])
+                s.blit(time_t, (tx + tw - time_t.get_width(), pbar_y - 11))
+
+        elif music.get("paired"):
+            phone = music.get("phone", "Phone")
+            pygame.draw.circle(s, t["primary_dim"], (15, y + 12), 3)
+            pt = self.font_sm.render(f"Connected: {phone}", True, t["text_dim"])
+            s.blit(pt, (28, y + 5))
+
         elif vd:
-            # Default view: Time and Temp
-            self.draw_glow_text(now.strftime("%I:%M %p"), self.font_md, t["text_med"], (10, y + 2))
+            ts = self.font_md.render(now.strftime("%I:%M %p"), True, t["text_med"])
+            s.blit(ts, (10, y + 2))
             amb = vd.get("AMBIANT_AIR_TEMP")
             if amb:
-                temp_str = f"{amb:.0f}°C"
-                self.draw_glow_text(temp_str, self.font_md, t["text_dim"], (W - self.font_md.size(temp_str)[0] - 10, y + 2))
+                at = self.font_md.render(f"{amb:.0f}C", True, t["text_dim"])
+                s.blit(at, (W - at.get_width() - 10, y + 2))
 
     def draw_status_strip(self, obd):
         W, H = self.width, self.height
@@ -696,7 +731,21 @@ class CarHUD:
 
         # Music
         music = self.get_music_data()
-        mc = t["primary"] if music.get("playing") else AMBER if music.get("paired") else t["text_dim"]
+        # Phone/BT indicator
+        phone_c = t["text_dim"]
+        try:
+            import subprocess as _sp
+            bt_info = _sp.run(["bluetoothctl", "info"], capture_output=True, text=True, timeout=3)
+            if "Connected: yes" in bt_info.stdout:
+                phone_c = t["primary"]  # connected
+            elif bt_info.returncode == 0 and "Device" in bt_info.stdout:
+                phone_c = AMBER  # paired but not connected
+            else:
+                bt_state = _sp.run(["bluetoothctl", "show"], capture_output=True, text=True, timeout=3)
+                if "Powered: yes" in bt_state.stdout:
+                    phone_c = AMBER  # BT on, searching
+        except Exception:
+            pass
 
         # Network
         nc = t["text_dim"]
@@ -749,7 +798,7 @@ class CarHUD:
             cam_count = 1
             if cam_c == t["text_dim"]: cam_c = AMBER
 
-        modules = [("AUD", ac), ("OBD", oc), ("MUS", mc),
+        modules = [("AUD", ac), ("OBD", oc), ("PHN", phone_c),
                    ("NET", nc), ("CAM", cam_c)]
         mw = W // len(modules)
         my = sy + 4

@@ -32,7 +32,7 @@ ART_CACHE_DIR = os.path.join(INSTALL_DIR, "art_cache")
 import threading
 import urllib.request
 import hashlib
-_last_art_url = ""
+_last_art_url = [""]  # mutable for closure access
 
 os.makedirs(ART_CACHE_DIR, exist_ok=True)
 
@@ -222,8 +222,9 @@ def main():
                 })
 
                 # Download album art — check cache first
-                if art_url and art_url != _last_art_url:
-                    _last_art_url = art_url
+                global _last_art_url
+                if art_url and art_url != _last_art_url[0]:
+                    _last_art_url[0] = art_url
                     def _dl(url):
                         try:
                             cache_key = hashlib.md5(url.encode()).hexdigest()[:12]
