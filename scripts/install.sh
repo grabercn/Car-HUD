@@ -21,7 +21,11 @@ echo "Source files copied"
 # Install dependencies
 apt-get update -qq
 apt-get install -y -qq python3-pygame python3-pillow python3-smbus python3-pyaudio \
-    fbi ffmpeg espeak patchelf fonts-liberation2 portaudio19-dev
+    fbi ffmpeg espeak patchelf fonts-liberation2 portaudio19-dev git unzip
+
+# Generate sound files
+python3 "$INSTALL_DIR/generate_sounds.py"
+echo "Sound files generated"
 pip3 install vosk obd bleak sherpa-onnx --break-system-packages 2>/dev/null || true
 
 # Fix vosk if needed
