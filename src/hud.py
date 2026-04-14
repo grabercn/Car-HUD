@@ -777,7 +777,7 @@ class CarHUD:
                 s.blit(st, (mx + (mw - st.get_width()) // 2, my - 12))
 
         # Split mic bar
-: left half = USB mic, right half = webcam mic
+# left half = USB mic, right half = webcam mic
         self._read_voice_signal()
         aud_x = 6 + 0 * mw + 2
         mic_w = mw - 4
