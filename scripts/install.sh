@@ -61,6 +61,24 @@ if [ ! -d "$INSTALL_DIR/vosk-model" ]; then
     rm vosk.zip
 fi
 
+# Set up WiFi priorities
+nmcli connection modify "Jimmy" connection.autoconnect-priority 100 2>/dev/null || true
+
+# Set up sudoers for dashcam control
+echo "chrismslist ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop car-hud-dashcam, /usr/bin/systemctl start car-hud-dashcam, /usr/bin/pkill" > /etc/sudoers.d/car-hud
+chmod 440 /etc/sudoers.d/car-hud
+
+# Enable auto-login to console
+mkdir -p /etc/systemd/system/getty@tty1.service.d
+cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf << 'EOF'
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin chrismslist --noclear %I $TERM
+EOF
+
+# Set hostname
+hostnamectl set-hostname Car-HUD 2>/dev/null || true
+
 echo ""
 echo "=== Installation Complete ==="
 echo "Reboot to start: sudo reboot"
