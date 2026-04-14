@@ -86,7 +86,9 @@ systemctl disable --now e2scrub_reap.service e2scrub_all.timer 2>/dev/null || tr
 systemctl disable --now keyboard-setup.service triggerhappy.service 2>/dev/null || true
 systemctl disable --now dphys-swapfile.service apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
 systemctl disable --now man-db.timer logrotate.timer 2>/dev/null || true
-systemctl mask systemd-rfkill.service systemd-rfkill.socket 2>/dev/null || true
+# NOTE: DO NOT disable bluetooth or rfkill — needed for OBD-II BLE + phone pairing
+# NOTE: DO NOT modify /etc/fstab boot partition entry — causes boot failure
+# NOTE: DO NOT mask getty@tty1 without testing — can lock you out of recovery
 systemctl mask keyboard-setup.service e2scrub_reap.service triggerhappy.service 2>/dev/null || true
 
 # Clean boot display

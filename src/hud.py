@@ -750,7 +750,7 @@ class CarHUD:
             if cam_c == t["text_dim"]: cam_c = AMBER
 
         modules = [("AUD", ac), ("OBD", oc), ("MUS", mc),
-                   ("NET", nc), ("CAM", cam_c), ("CPU", t["primary"])]
+                   ("NET", nc), ("CAM", cam_c)]
         mw = W // len(modules)
         my = sy + 4
 
@@ -776,12 +776,11 @@ class CarHUD:
                 st = self.font_xs.render(net_ssid[:10].upper(), True, color)
                 s.blit(st, (mx + (mw - st.get_width()) // 2, my - 12))
 
-        # Split mic bar
-# left half = USB mic, right half = webcam mic
+        # Mic level bar — centered under AUD indicator
         self._read_voice_signal()
-        aud_x = 6 + 0 * mw + 2
-        mic_w = mw - 4
-        mic_y = my + 19
+        aud_x = 0 * mw + 4
+        mic_w = mw - 8
+        mic_y = my + 20
         half = mic_w // 2
 
         # Background
