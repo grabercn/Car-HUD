@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Honda Accord HUD - Visual Dashboard
+"""Car-HUD - Visual Dashboard
 3.5" TFT (480x320). Full-screen visual gauges.
 Theme system with voice commands: "Hey Honda change color to blue/red/green/amber"
 Auto day/night mode based on clock (+ light sensor when available).
@@ -22,11 +22,11 @@ _headless = False
 import pygame
 from pygame.locals import *
 
-# ── Theme Presets (2014 Honda Accord Hybrid style) ──
-# Themes modeled on 2014 Honda Accord Hybrid iMID color options
+# ── Theme Presets (2014 Car-HUD style) ──
+# Themes modeled on 2014 Car-HUD iMID color options
 # Each theme completely transforms the entire display
 THEMES = {
-    "blue": {  # Default Honda Accord blue
+    "blue": {  # Default Car-HUD blue
         "primary":    (0, 180, 255),     # Bright cyan-blue gauges
         "primary_dim":(0, 70, 120),      # Dim gauge backgrounds
         "accent":     (0, 130, 220),     # Secondary elements
@@ -431,7 +431,7 @@ class CarHUD:
             s.blit(vt, (x + w - vt.get_width(), y - vt.get_height() - 1))
 
     def draw_vehicle_page(self, obd, music):
-        """Honda Accord Hybrid Stock-style Instrument Cluster.
+        """Car-HUD Stock-style Instrument Cluster.
         Large central speedo, side-mounted charge and fuel clusters.
         """
         W, H = self.width, self.height
@@ -609,7 +609,7 @@ class CarHUD:
             logo_y = ly + (avail_h - target_h) // 2 + 2
             s.blit(logo, (lx, logo_y))
         else:
-            ht = self.font_sm.render("Honda Accord", True, t["primary_dim"])
+            ht = self.font_sm.render("Car-HUD", True, t["primary_dim"])
             s.blit(ht, ((W - ht.get_width()) // 2, ly + 20))
 
     def draw_lower_section(self, y, music, vd):
@@ -626,7 +626,7 @@ class CarHUD:
 
             # Album art (left side)
             art_x = 4
-            art_size = 42
+            art_size = 50
             art_loaded = False
             try:
                 art_file = "/home/chrismslist/car-hud/current_art.jpg"
@@ -653,7 +653,7 @@ class CarHUD:
 
             # Use CJK font if text contains non-ASCII
             has_cjk = any(ord(c) > 0x2E80 for c in track)
-            track_font = self.font_cjk if has_cjk and self.font_cjk else self.font_sm
+            track_font = self.font_cjk if has_cjk and self.font_cjk else self.font_md
             tt = track_font.render(track[:max_c], True, t["text_bright"])
             s.blit(tt, (tx, y + 1))
 
@@ -825,6 +825,19 @@ class CarHUD:
             mt = self.font_xs.render(name, True, color)
             s.blit(mt, (mx + (mw - mt.get_width()) // 2, my + 10))
 
+            if name == "PHN":
+                try:
+                    bt_info = subprocess.run(
+                        ["bluetoothctl", "info"],
+                        capture_output=True, text=True, timeout=2)
+                    for bline in bt_info.stdout.splitlines():
+                        if "Name:" in bline:
+                            pname = bline.split("Name:")[1].strip()[:8]
+                            ptext = self.font_xs.render(pname, True, color)
+                            s.blit(ptext, (mx + (mw - ptext.get_width()) // 2, my - 12))
+                            break
+                except Exception:
+                    pass
             if name == "NET" and net_ssid:
                 st = self.font_xs.render(net_ssid[:10].upper(), True, color)
                 s.blit(st, (mx + (mw - st.get_width()) // 2, my - 12))
@@ -1286,7 +1299,7 @@ class CarHUD:
         pygame.quit()
         os.system("clear")
         print("\033[38;2;0;140;210m" + "=" * 36)
-        print("     Honda Accord - Terminal")
+        print("     Car-HUD - Terminal")
         print("  Type 'car-hud' to return")
         print("=" * 36 + "\033[0m\n")
         os.execvp("/bin/bash", ["/bin/bash", "--login"])
