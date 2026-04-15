@@ -31,25 +31,25 @@ def draw(hud, stats, music):
     hud.draw_glow_text(date_str, hud.font_sm, t["text_med"],
                        ((W - hud.font_sm.size(date_str)[0]) // 2, 75))
 
-    # Sleek minimal system bars
-    ry = 100
-    hw = W // 2 - 20
-    pad = 10
-
+    # System bars — compact single line with inline values
+    ry = 92
+    bw = W - 20
     temp = stats.get("cpu_temp", 0)
     tc = t["primary"] if temp < 60 else AMBER if temp < 75 else RED
-    hud.draw_hbar(pad, ry, hw, 4, temp / 85, tc, "CPU", f"{temp:.0f}°C")
-
     mp = stats.get("mem_used_pct", 0)
     mc = t["primary"] if mp < 70 else AMBER if mp < 85 else RED
-    hud.draw_hbar(W // 2 + pad, ry, hw, 4, mp / 100, mc, "MEM", f"{mp}%")
 
-    # Widget area — take up the rest of the screen
-    wy = ry + 25
+    # Compact side-by-side bars with wide gap
+    half = bw // 2 - 15
+    hud.draw_hbar(10, ry, half, 4, temp / 85, tc, "CPU", f"{temp:.0f}°")
+    hud.draw_hbar(W // 2 + 5, ry, half, 4, mp / 100, mc, "MEM", f"{mp}%")
+
+    # Widget area
+    wy = ry + 20
     pygame.draw.line(s, t["border_lite"], (10, wy), (W - 10, wy))
     
     # Status strip is now floating at bottom right, so we can use almost all height
-    strip_y = H - 24
+    strip_y = H - 32
 
     # Get active widgets and stack them
     active = widgets.get_active(hud, music)

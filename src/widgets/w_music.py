@@ -43,11 +43,6 @@ def draw(hud, x, y, w, h, music):
             pil = PILImage.open(art_file).convert("RGB")
             pil = pil.resize((art_size, art_size), PILImage.LANCZOS)
             art_surf = pygame.image.fromstring(pil.tobytes(), (art_size, art_size), "RGB")
-            # Subtle rounded border effect using a mask
-            mask = pygame.Surface((art_size, art_size), pygame.SRCALPHA)
-            pygame.draw.rect(mask, (255, 255, 255, 255), (0, 0, art_size, art_size), border_radius=8)
-            art_surf.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
-            
             s.blit(art_surf, (x, y + (h - art_size) // 2))
             art_loaded = True
     except Exception:

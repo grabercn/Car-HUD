@@ -544,7 +544,7 @@ class CarHUD:
         t = self.t
         
         # Minimalist compact status pill
-        sy = H - 20
+        sy = H - 30
 
         # Audio detection
         ac = t["text_dim"]
@@ -642,42 +642,33 @@ class CarHUD:
             if cam_c == t["text_dim"]: cam_c = AMBER
 
         modules = [("MIC", ac), ("OBD", oc), ("PHN", phone_c),
-                   ("WIFI", nc), ("CAM", cam_c)]
-        
-        # Calculate width of the floating pill
-        pill_w = len(modules) * 36 + 10
-        pill_x = W - pill_w - 6
-        
-        pygame.draw.rect(s, (0, 0, 0, 140), (pill_x, sy, pill_w, 16), border_radius=8)
-        pygame.draw.rect(s, t["border_lite"], (pill_x, sy, pill_w, 16), 1, border_radius=8)
+                   ("NET", nc), ("CAM", cam_c)]
 
+        # Status indicators — dots with labels, evenly spaced
+        mw = W // len(modules)
         for i, (name, color) in enumerate(modules):
-            mx = pill_x + 8 + i * 36
-            pygame.draw.circle(s, color, (mx + 4, sy + 8), 3)
+            mx = i * mw + mw // 2
+            pygame.draw.circle(s, color, (mx, sy + 5), 3)
             mt = self.font_mono.render(name, True, color)
-            s.blit(mt, (mx + 10, sy + 2))
+            s.blit(mt, (mx - mt.get_width() // 2, sy + 12))
 
-        # Mic level bar (miniature, above the pill)
+        # Mic level bar — thin line above status strip
         self._read_voice_signal()
-        mic_w = pill_w
-        mic_y = sy - 4
+        mic_w = W - 20
+        mic_y = sy - 3
         half = mic_w // 2
 
-        pygame.draw.rect(s, t["border"], (pill_x, mic_y, mic_w, 2), border_radius=1)
+        pygame.draw.rect(s, t["border"], (10, mic_y, mic_w, 2), border_radius=1)
 
         if self.mic1_level > 0.01:
             lc = t["primary"] if self.mic1_level < 0.3 else GREEN if self.mic1_level < 0.6 else AMBER
             fw = max(1, int(half * self.mic1_level))
-            pygame.draw.rect(s, lc, (pill_x + half - fw, mic_y, fw, 2), border_radius=1)
+            pygame.draw.rect(s, lc, (10 + half - fw, mic_y, fw, 2), border_radius=1)
 
         if self.mic2_level > 0.01:
             rc = AMBER if self.mic2_level < 0.3 else GREEN if self.mic2_level < 0.6 else t["primary"]
             fw = max(1, int(half * self.mic2_level))
-            pygame.draw.rect(s, rc, (pill_x + half, mic_y, fw, 2), border_radius=1)
-
-        if self.has_keyboard:
-            sc = self.font_xs.render("C:Cam 1-6:Theme", True, t["text_dim"])
-            s.blit(sc, (6, sy))
+            pygame.draw.rect(s, rc, (10 + half, mic_y, fw, 2), border_radius=1)
 
     def get_voice_state(self):
         """Read transcript and determine voice UI state."""
