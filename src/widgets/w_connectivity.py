@@ -7,7 +7,8 @@ import pygame
 
 name = "Connectivity"
 priority = 15
-view_time = 5  # seconds — just status glance
+view_time = 5
+show_every = 60  # show once a minute unless phone connects
 
 _bt_cache = {"connected": False, "name": "", "last_check": 0}
 
@@ -44,7 +45,12 @@ def _check_bt():
     return _bt_cache["connected"]
 
 
+_boot_time = time.time()
+
 def urgency(hud, music):
+    # High priority for first 30 seconds after boot
+    if time.time() - _boot_time < 30:
+        return -50
     return 0
 
 

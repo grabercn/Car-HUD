@@ -7,8 +7,9 @@ import subprocess
 import pygame
 
 name = "Camera"
-priority = 50   # low priority normally
-view_time = 8
+priority = 50
+view_time = 5
+show_every = 90  # show once every 90 seconds unless recording starts
 
 _cam_count = 0
 _last_check = 0

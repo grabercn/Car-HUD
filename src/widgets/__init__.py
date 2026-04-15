@@ -23,6 +23,7 @@ _last_shown = {}  # widget name → last time it was displayed
 
 _widgets = []
 _loaded = False
+_load_time = time.time()
 CONFIG_FILE = "/home/chrismslist/car-hud/.widget-config.json"
 
 
@@ -94,15 +95,6 @@ def get_active(hud, music):
             continue
         if getattr(mod, "requires_online", False) and not online:
             continue
-        # Respect show_every — skip if shown too recently (unless urgency is high)
-        show_every = getattr(mod, "show_every", 0)
-        if show_every > 0 and wname in _last_shown:
-            elapsed = now - _last_shown[wname]
-            if elapsed < show_every:
-                # Check if urgency overrides the cooldown
-                urg = mod.urgency(hud, music) if hasattr(mod, "urgency") else 0
-                if urg >= 0:  # no urgent event, skip
-                    continue
         try:
             if mod.is_active(hud, music):
                 urg = 0
@@ -110,9 +102,28 @@ def get_active(hud, music):
                     urg = mod.urgency(hud, music)
                 eff = getattr(mod, "priority", 50) + urg
                 active.append((eff, mod.name, mod))
-                _last_shown[wname] = now
         except Exception:
             pass
+
+    # Apply show_every cooldowns — but only if we'd still have 3+ widgets
+    # Skip cooldowns entirely during first 60s of boot (let everything show once)
+    # This prevents the rotation from breaking when too many are filtered
+    boot_age = now - _load_time
+    if len(active) > 3 and boot_age > 60:
+        filtered = []
+        for eff, wname, mod in active:
+            show_every = getattr(mod, "show_every", 0)
+            wkey = wname.lower()
+            if show_every > 0 and wkey in _last_shown:
+                if now - _last_shown[wkey] < show_every:
+                    urg = mod.urgency(hud, music) if hasattr(mod, "urgency") else 0
+                    if urg >= 0:
+                        continue  # skip — on cooldown
+            filtered.append((eff, wname, mod))
+            _last_shown[wkey] = now
+        # Only use filtered list if it still has enough widgets
+        if len(filtered) >= 2:
+            active = filtered
 
     active.sort(key=lambda x: x[0])
     _active_cache = [(name, mod) for _, name, mod in active]
