@@ -203,6 +203,12 @@ class CarHUD:
         self.camera_frame = None
         self.camera_cap = None
 
+        # Touch support
+        self.touch_start = None  # (x, y, time) for swipe detection
+        self.force_page = None   # None=auto, "vehicle", "system"
+        self.page_names = ["system", "vehicle"]
+        self.page_idx = 0
+
         # Theme
         self.auto_theme = True
         self.theme_name = self._load_theme()
@@ -465,9 +471,9 @@ class CarHUD:
             wy += txt.get_height() + 4
 
         # ── Central Cluster: Speedo ──
-        # Large central arc (stock style)
-        cx, cy = W // 2, 168
-        r_speed = 130
+        # Large central arc — pushed up for 2.5" TFT
+        cx, cy = W // 2, 148
+        r_speed = 115
         sp_pct = min(speed / 140, 1.0)
         # Main speed arc - from 1.15*pi to -0.15*pi
         self.draw_arc_gauge(cx, cy, r_speed, 14, sp_pct, t["primary"], 
@@ -497,8 +503,8 @@ class CarHUD:
         s.blit(ml, (cx - ml.get_width()//2, cy + 29 + (badge_h - ml.get_height())//2))
 
         # ── Left Cluster: CHG/PWR ──
-        lx, ly = 70, 168
-        lr = 80
+        lx, ly = 65, 148
+        lr = 70
         if ev:
             # Only Power when EV
             pwr_pct = min(throttle / 80, 1.0)
@@ -519,8 +525,8 @@ class CarHUD:
         self.draw_glow_text("CHG", self.font_xs, GREEN, (lx - 12, ly + lr + 4))
 
         # ── Right Cluster: Fuel & Battery ──
-        rx, ry = W - 70, 168
-        rr = 80
+        rx, ry = W - 65, 148
+        rr = 70
         # Fuel Outer
         fc = GREEN if fuel > 20 else AMBER if fuel > 10 else RED
         self.draw_arc_gauge(rx, ry, rr, 10, fuel/100, fc,
@@ -552,9 +558,9 @@ class CarHUD:
         range_pos = ((W - self.font_sm.size(range_str)[0])//2, H - 54)
         self.draw_glow_text(range_str, self.font_sm, t["text_bright"], range_pos)
 
-        ly = H - 36
-        pygame.draw.line(s, t["border_lite"], (20, ly), (W - 20, ly))
-        self.draw_lower_section(ly + 4, music, vd)
+        ly = H - 34
+        pygame.draw.line(s, t["border_lite"], (10, ly), (W - 10, ly))
+        self.draw_lower_section(ly + 2, music, vd)
 
     def draw_system_page(self, stats, music):
         W, H = self.width, self.height
@@ -563,36 +569,36 @@ class CarHUD:
         now = datetime.datetime.now()
 
 
-        # Time (bigger)
+        # Time — large and centered
         time_str = now.strftime("%I:%M")
         ampm = now.strftime("%p")
-        
+
         tx_full_w = self.font_xl.size(time_str)[0] + self.font_md.size(ampm)[0] + 6
         tx = (W - tx_full_w) // 2
-        self.draw_glow_text(time_str, self.font_xl, t["primary"], (tx, 8))
-        self.draw_glow_text(ampm, self.font_md, t["accent"], (tx + self.font_xl.size(time_str)[0] + 6, 26))
+        self.draw_glow_text(time_str, self.font_xl, t["primary"], (tx, 4))
+        self.draw_glow_text(ampm, self.font_md, t["accent"], (tx + self.font_xl.size(time_str)[0] + 6, 20))
 
         date_str = now.strftime("%A, %B %d").upper()
-        self.draw_glow_text(date_str, self.font_sm, t["text_med"], ((W - self.font_sm.size(date_str)[0]) // 2, 48))
+        self.draw_glow_text(date_str, self.font_sm, t["text_med"], ((W - self.font_sm.size(date_str)[0]) // 2, 44))
 
-        dy = 72
+        dy = 62
         pygame.draw.line(s, t["border_lite"], (10, dy), (W - 10, dy))
 
-        # System bars
-        ry = dy + 12
-        hw = W // 2 - 24
-        pad = 12
+        # System bars — wider, better spaced
+        ry = dy + 8
+        hw = W // 2 - 20
+        pad = 10
 
         temp = stats.get("cpu_temp", 0)
         tc = t["primary"] if temp < 60 else AMBER if temp < 75 else RED
-        self.draw_hbar(pad, ry + 16, hw, 10, temp/85, tc, "CPU", f"{temp:.0f}°C")
+        self.draw_hbar(pad, ry + 16, hw, 12, temp/85, tc, "CPU", f"{temp:.0f}°C")
 
         mp = stats.get("mem_used_pct", 0)
         mc = t["primary"] if mp < 70 else AMBER if mp < 85 else RED
-        self.draw_hbar(W//2 + pad, ry + 16, hw, 10, mp/100, mc, "MEM", f"{mp}%")
+        self.draw_hbar(W//2 + pad, ry + 16, hw, 12, mp/100, mc, "MEM", f"{mp}%")
 
         # Lower: Honda logo or music
-        ly = ry + 44
+        ly = ry + 42
         pygame.draw.line(s, t["border_lite"], (10, ly), (W - 10, ly))
 
         if music.get("playing"):
@@ -625,9 +631,9 @@ class CarHUD:
             album = music.get("album", "")
             device = music.get("device", "")
 
-            # Album art (left side)
+            # Album art (left side) — bigger for 2.5" TFT
             art_x = 4
-            art_size = 50
+            art_size = 55
             art_loaded = False
             try:
                 art_file = "/home/chrismslist/car-hud/current_art.jpg"
@@ -702,10 +708,10 @@ class CarHUD:
         W, H = self.width, self.height
         s = self.surf
         t = self.t
-        sy = H - 28
+        sy = H - 26
 
         # Strip background
-        pygame.draw.rect(s, (0, 0, 0, 80), (0, sy, W, 28))
+        pygame.draw.rect(s, (0, 0, 0, 80), (0, sy, W, 26))
         pygame.draw.line(s, t["border_lite"], (0, sy), (W, sy))
 
         # Audio detection
@@ -806,7 +812,7 @@ class CarHUD:
         modules = [("AUD", ac), ("OBD", oc), ("PHN", phone_c),
                    ("NET", nc), ("CAM", cam_c)]
         mw = W // len(modules)
-        my = sy + 4
+        my = sy + 2
 
         for i, (name, color) in enumerate(modules):
             mx = i * mw
@@ -847,7 +853,7 @@ class CarHUD:
         self._read_voice_signal()
         aud_x = 0 * mw + 4
         mic_w = mw - 8
-        mic_y = my + 20
+        mic_y = my + 18
         half = mic_w // 2
 
         # Background
@@ -868,9 +874,10 @@ class CarHUD:
         # Center divider tick
         pygame.draw.line(s, t["text_dim"], (aud_x + half, mic_y), (aud_x + half, mic_y + 2))
 
+        # Keyboard shortcuts hint only when keyboard is connected (above strip)
         if self.has_keyboard:
-            sc = self.font_xs.render("C:Cam H:Help 1-6:Theme F1:Calibrate ?:Keys", True, t["text_dim"])
-            s.blit(sc, (4, H - 10))
+            sc = self.font_xs.render("C:Cam 1-6:Theme", True, t["text_dim"])
+            s.blit(sc, (W - sc.get_width() - 4, sy - 12))
 
     def get_voice_state(self):
         """Read transcript and determine voice UI state."""
@@ -1327,6 +1334,31 @@ class CarHUD:
         theme_check_timer = 0
 
         while self.running:
+            # Process touch events from touch_service
+            try:
+                with open("/tmp/car-hud-touch") as tf:
+                    td = json.load(tf)
+                    if time.time() - td.get("time", 0) < 0.5 and td["time"] != getattr(self, '_last_touch_time', 0):
+                        self._last_touch_time = td["time"]
+                        g = td.get("gesture", "")
+                        ty = td.get("y", 0)
+                        if g == "tap":
+                            if ty < self.height - 30:
+                                self.page_idx = (self.page_idx + 1) % len(self.page_names)
+                                self.force_page = self.page_names[self.page_idx]
+                            else:
+                                themes = list(THEMES.keys())
+                                ci = themes.index(self.theme_name) if self.theme_name in themes else 0
+                                self.set_theme(themes[(ci + 1) % len(themes)])
+                        elif g in ("swipe_left", "swipe_right"):
+                            if g == "swipe_right":
+                                self.page_idx = (self.page_idx - 1) % len(self.page_names)
+                            else:
+                                self.page_idx = (self.page_idx + 1) % len(self.page_names)
+                            self.force_page = self.page_names[self.page_idx]
+            except Exception:
+                pass
+
             for event in pygame.event.get():
                 if event.type == QUIT:
                     self.running = False
@@ -1441,7 +1473,14 @@ class CarHUD:
                 self.has_keyboard = keyboard_connected()
                 self.kb_check_timer = 0
 
-            if obd["connected"] and obd.get("data"):
+            # Page selection: touch override or auto-detect from OBD
+            show_vehicle = obd["connected"] and obd.get("data")
+            if self.force_page == "vehicle":
+                show_vehicle = True
+            elif self.force_page == "system":
+                show_vehicle = False
+
+            if show_vehicle:
                 self.draw_vehicle_page(obd, music)
             else:
                 self.draw_system_page(stats, music)
