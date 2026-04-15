@@ -1,8 +1,6 @@
-"""System Info widget — uptime, temps, storage (not redundant with header clock)."""
+"""System Info widget — uptime, disk, version."""
 
 import os
-import time
-import datetime
 import pygame
 
 name = "System"
@@ -18,45 +16,48 @@ def draw(hud, x, y, w, h, music):
     t = hud.t
 
     pygame.draw.rect(s, t["panel"], (x, y, w, h), border_radius=6)
+    cy = y + h // 2
 
     # Uptime
     try:
         with open("/proc/uptime") as f:
             up_sec = int(float(f.read().split()[0]))
         up_h, up_m = up_sec // 3600, (up_sec % 3600) // 60
-        up_str = f"Up {up_h}h {up_m}m" if up_h > 0 else f"Up {up_m}m"
+        up_str = f"{up_h}h {up_m}m" if up_h > 0 else f"{up_m}m"
     except Exception:
-        up_str = ""
+        up_str = "?"
 
-    # Disk usage
+    # Disk
     try:
         st = os.statvfs("/")
-        used_gb = (st.f_blocks - st.f_bfree) * st.f_frsize / (1024**3)
-        total_gb = st.f_blocks * st.f_frsize / (1024**3)
-        disk_str = f"Disk {used_gb:.1f}/{total_gb:.1f}G"
+        used = (st.f_blocks - st.f_bfree) * st.f_frsize / (1024**3)
+        total = st.f_blocks * st.f_frsize / (1024**3)
+        disk_pct = used / total if total > 0 else 0
     except Exception:
-        disk_str = ""
+        used, total, disk_pct = 0, 0, 0
 
-    # Layout: left column + right column
-    cy = y + h // 2
+    # Left: uptime icon + text
+    # Clock icon
+    pygame.draw.circle(s, t["text_med"], (x + 16, cy), 7, 2)
+    pygame.draw.line(s, t["text_med"], (x + 16, cy), (x + 16, cy - 4), 2)
+    pygame.draw.line(s, t["text_med"], (x + 16, cy), (x + 19, cy + 1), 2)
 
-    if up_str:
-        ut = hud.font_sm.render(up_str, True, t["text_bright"])
-        s.blit(ut, (x + 10, cy - 10))
+    ut = hud.font_sm.render(up_str, True, t["text_bright"])
+    s.blit(ut, (x + 28, cy - 8))
 
-    if disk_str:
-        dt = hud.font_xs.render(disk_str, True, t["text_dim"])
-        s.blit(dt, (x + 10, cy + 8))
+    # Right: disk bar
+    bar_x = x + w // 2 + 10
+    bar_w = w // 2 - 30
+    bar_h = 6
+    bar_y = cy - bar_h // 2
 
-    # Version on right
-    ver = ""
-    try:
-        with open("/home/chrismslist/car-hud/.version") as f:
-            ver = f.read().strip()[:8]
-    except Exception:
-        pass
-    if ver:
-        vt = hud.font_xs.render(f"v{ver}", True, t["text_dim"])
-        s.blit(vt, (x + w - vt.get_width() - 10, cy - 2))
+    pygame.draw.rect(s, t["border"], (bar_x, bar_y, bar_w, bar_h), border_radius=3)
+    fw = int(bar_w * min(disk_pct, 1))
+    dc = t["primary"] if disk_pct < 0.7 else (220, 160, 0) if disk_pct < 0.9 else (220, 45, 45)
+    if fw > 0:
+        pygame.draw.rect(s, dc, (bar_x, bar_y, fw, bar_h), border_radius=3)
+
+    dt = hud.font_xs.render(f"{used:.0f}/{total:.0f}G", True, t["text_dim"])
+    s.blit(dt, (bar_x, bar_y + bar_h + 2))
 
     return True

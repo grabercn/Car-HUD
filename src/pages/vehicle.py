@@ -12,11 +12,13 @@ RED = (220, 45, 45)
 
 _widget_cycle_time = 0
 _widget_cycle_idx = 0
+_fade_frame = 0
+_FADE_FRAMES = 6
 
 
 def draw(hud, obd, music):
     """Draw the vehicle instrument cluster page."""
-    global _widget_cycle_time, _widget_cycle_idx
+    global _widget_cycle_time, _widget_cycle_idx, _fade_frame
 
     W, H = hud.width, hud.height
     s = hud.surf
@@ -121,25 +123,33 @@ def draw(hud, obd, music):
     hud.draw_glow_text(f"H2O {cool:.0f}C", hud.font_xs, t["text_med"],
                        (cx - 60 - hud.font_xs.size(f"H2O {cool:.0f}C")[0], cy + 60))
 
-    # ── Widget strip — dynamically placed to use remaining space ──
-    wly = cy + 95
-    # Remove the hard border line for a cleaner look
-    
+    # ── Widget strip — single widget, auto-rotates ──
+    wly = cy + 82
+    widget_h = H - wly - 24
+
     active = widgets.get_active(hud, music)
     if active:
         now_t = time.time()
-        if now_t - _widget_cycle_time > 5:
+        if now_t - _widget_cycle_time > 6:
             _widget_cycle_time = now_t
             _widget_cycle_idx = (_widget_cycle_idx + 1) % len(active)
+            _fade_frame = _FADE_FRAMES
         if _widget_cycle_idx >= len(active):
             _widget_cycle_idx = 0
+        if _fade_frame > 0:
+            _fade_frame -= 1
+
         wname, mod = active[_widget_cycle_idx]
-        
-        # Widget fills space between gauges and status strip
-        widget_h = H - wly - 24
-        
         try:
-            # Draw widget with slightly larger margin
-            mod.draw(hud, 10, wly, W - 20, widget_h, music)
+            # Render to temp surface for fade
+            ws = pygame.Surface((W - 12, widget_h), pygame.SRCALPHA)
+            old_surf = hud.surf
+            hud.surf = ws
+            mod.draw(hud, 0, 0, W - 12, widget_h, music)
+            hud.surf = old_surf
+
+            if _fade_frame > 0:
+                ws.set_alpha(int(255 * (1 - _fade_frame / _FADE_FRAMES)))
+            s.blit(ws, (6, wly))
         except Exception:
-            pass
+            hud.surf = old_surf if 'old_surf' in dir() else s
