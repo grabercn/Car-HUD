@@ -1,4 +1,4 @@
-"""Connectivity widget — WiFi + Bluetooth in one."""
+"""Connectivity widget — WiFi + Bluetooth unified."""
 
 import json
 import time
@@ -12,7 +12,6 @@ _bt_cache = {"connected": False, "name": "", "last_check": 0}
 
 
 def is_active(hud, music):
-    # Active if WiFi connected OR BT connected
     wifi = False
     try:
         with open("/tmp/car-hud-wifi-data") as f:
@@ -20,9 +19,7 @@ def is_active(hud, music):
         wifi = wd.get("state") in ("connected", "tethered")
     except Exception:
         pass
-
-    bt = _check_bt()
-    return wifi or bt
+    return wifi or _check_bt()
 
 
 def _check_bt():
@@ -54,65 +51,65 @@ def draw(hud, x, y, w, h, music):
     s = hud.surf
     t = hud.t
 
-    pygame.draw.rect(s, t["panel"], (x, y, w, h), border_radius=8)
-    pygame.draw.rect(s, t["border_lite"], (x, y, w, h), 1, border_radius=8)
+    pygame.draw.rect(s, t["panel"], (x, y, w, h), border_radius=6)
 
     mid = w // 2
-    cy_mid = y + h // 2
+    pad = 10
 
-    # Left half: WiFi
+    # ── Left: WiFi ──
+    wifi_ok = False
     try:
         with open("/tmp/car-hud-wifi-data") as f:
             wd = json.load(f)
         state = wd.get("state", "")
         ssid = wd.get("ssid", "")
         ip = wd.get("ip", "")
-
-        if state in ("connected", "tethered"):
-            color = t["primary"]
-            label = ssid if state == "connected" else "Tethered"
-        else:
-            color = t["text_dim"]
-            label = "No WiFi"
-
-        # Signal bars
-        bx = x + 12
-        by = cy_mid + 6
-        for i in range(4):
-            bh = 4 + i * 3
-            pygame.draw.rect(s, color, (bx + i * 6, by - bh, 4, bh), border_radius=1)
-
-        # SSID
-        nt = hud.font_sm.render(label, True, t["text_bright"])
-        s.blit(nt, (x + 40, cy_mid - 12))
-
-        # IP below
-        if ip:
-            it = hud.font_xs.render(ip, True, t["text_dim"])
-            s.blit(it, (x + 40, cy_mid + 4))
+        wifi_ok = state in ("connected", "tethered")
     except Exception:
-        nt = hud.font_sm.render("No WiFi", True, t["text_dim"])
-        s.blit(nt, (x + 40, cy_mid - 6))
+        state, ssid, ip = "", "", ""
 
-    # Divider
+    color = t["primary"] if wifi_ok else t["text_dim"]
+    label = ssid[:14] if wifi_ok and state == "connected" else "Tethered" if state == "tethered" else "No WiFi"
+
+    # WiFi icon — 3 arcs
+    ix, iy = x + pad + 8, y + h // 2 + 4
+    for i in range(3):
+        r = 6 + i * 5
+        c = color if wifi_ok else t["border"]
+        pygame.draw.arc(s, c, (ix - r, iy - r, r * 2, r * 2), 0.4, 2.7, 2)
+    pygame.draw.circle(s, color, (ix, iy), 2)
+
+    # Text
+    nt = hud.font_sm.render(label, True, t["text_bright"] if wifi_ok else t["text_dim"])
+    s.blit(nt, (x + pad + 26, y + h // 2 - 12))
+    if ip and wifi_ok:
+        it = hud.font_xs.render(ip, True, t["text_dim"])
+        s.blit(it, (x + pad + 26, y + h // 2 + 6))
+
+    # ── Divider ──
     pygame.draw.line(s, t["border_lite"], (x + mid, y + 6), (x + mid, y + h - 6))
 
-    # Right half: Bluetooth
-    rx = x + mid + 12
-    if _bt_cache["connected"]:
-        # BT icon
-        pygame.draw.circle(s, t["primary"], (rx + 6, cy_mid), 4)
-        pygame.draw.circle(s, t["bg"], (rx + 6, cy_mid), 2)
+    # ── Right: Bluetooth ──
+    rx = x + mid + pad
+    bt_ok = _bt_cache["connected"]
+    bt_color = t["primary"] if bt_ok else t["text_dim"]
 
+    # BT icon — simple "B" shape
+    bx, by = rx + 6, y + h // 2
+    pygame.draw.lines(s, bt_color, False, [
+        (bx - 3, by - 6), (bx + 4, by - 1), (bx - 3, by + 4),
+        (bx + 4, by + 9), (bx - 3, by + 14)
+    ], 2)
+    pygame.draw.line(s, bt_color, (bx, by - 8), (bx, by + 16), 2)
+
+    if bt_ok:
         bt_name = _bt_cache["name"][:12]
         bt = hud.font_sm.render(bt_name, True, t["text_bright"])
-        s.blit(bt, (rx + 16, cy_mid - 12))
-
+        s.blit(bt, (rx + 20, y + h // 2 - 12))
         st = hud.font_xs.render("Connected", True, t["text_dim"])
-        s.blit(st, (rx + 16, cy_mid + 4))
+        s.blit(st, (rx + 20, y + h // 2 + 6))
     else:
-        pygame.draw.circle(s, t["text_dim"], (rx + 6, cy_mid), 4, 1)
         bt = hud.font_sm.render("No Device", True, t["text_dim"])
-        s.blit(bt, (rx + 16, cy_mid - 6))
+        s.blit(bt, (rx + 20, y + h // 2 - 4))
 
     return True

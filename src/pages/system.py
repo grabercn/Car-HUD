@@ -1,4 +1,4 @@
-"""System page — clock, system stats, widget stack."""
+"""System page — clock, system vitals, widget area."""
 
 import datetime
 import pygame
@@ -10,80 +10,71 @@ RED = (220, 45, 45)
 
 
 def draw(hud, stats, music):
-    """Draw the system info page with stacked widgets."""
     W, H = hud.width, hud.height
     s = hud.surf
     t = hud.t
     now = datetime.datetime.now()
 
-    # Time — massive and centered (Apple style)
+    # ── Top: Time + Date ──
     time_str = now.strftime("%I:%M")
     ampm = now.strftime("%p")
 
-    # Use XXL font for time
-    tx_full_w = hud.font_xxl.size(time_str)[0] + hud.font_md.size(ampm)[0] + 6
-    tx = (W - tx_full_w) // 2
-    hud.draw_glow_text(time_str, hud.font_xxl, t["text_bright"], (tx, 8))
-    hud.draw_glow_text(ampm, hud.font_md, t["accent"],
-                       (tx + hud.font_xxl.size(time_str)[0] + 6, 40))
+    # Time left-aligned, date right-aligned — single line, no overlap
+    hud.draw_glow_text(time_str, hud.font_xxl, t["text_bright"], (10, 2))
+    ampm_x = 10 + hud.font_xxl.size(time_str)[0] + 4
+    hud.draw_glow_text(ampm, hud.font_sm, t["accent"], (ampm_x, 32))
 
-    date_str = now.strftime("%A, %B %d").upper()
-    hud.draw_glow_text(date_str, hud.font_sm, t["text_med"],
-                       ((W - hud.font_sm.size(date_str)[0]) // 2, 75))
+    date_str = now.strftime("%a, %b %d").upper()
+    dw = hud.font_sm.size(date_str)[0]
+    hud.draw_glow_text(date_str, hud.font_sm, t["text_med"], (W - dw - 10, 8))
 
-    # System bars — compact single line with inline values
-    ry = 92
-    bw = W - 20
+    # CPU + MEM inline with date
     temp = stats.get("cpu_temp", 0)
-    tc = t["primary"] if temp < 60 else AMBER if temp < 75 else RED
     mp = stats.get("mem_used_pct", 0)
+    tc = t["primary"] if temp < 60 else AMBER if temp < 75 else RED
     mc = t["primary"] if mp < 70 else AMBER if mp < 85 else RED
 
-    # Compact side-by-side bars with wide gap
-    half = bw // 2 - 15
-    hud.draw_hbar(10, ry, half, 4, temp / 85, tc, "CPU", f"{temp:.0f}°")
-    hud.draw_hbar(W // 2 + 5, ry, half, 4, mp / 100, mc, "MEM", f"{mp}%")
+    vitals = f"CPU {temp:.0f}°  MEM {mp}%"
+    vt = hud.font_xs.render(vitals, True, t["text_dim"])
+    s.blit(vt, (W - vt.get_width() - 10, 28))
 
-    # Widget area
-    wy = ry + 20
-    pygame.draw.line(s, t["border_lite"], (10, wy), (W - 10, wy))
-    
-    # Status strip is now floating at bottom right, so we can use almost all height
-    strip_y = H - 32
+    # Thin divider
+    dy = 52
+    pygame.draw.line(s, t["border_lite"], (10, dy), (W - 10, dy))
 
-    # Get active widgets and stack them
+    # ── Widget area: fill remaining space ──
+    wy = dy + 4
+    strip_y = H - 22  # status strip starts here
+
     active = widgets.get_active(hud, music)
     shown = 0
     avail_h = strip_y - wy - 4
-    
+
     if active:
-        # Give more height if only 1 widget, or split it if 2
-        widget_h = avail_h if len(active) == 1 else (avail_h // 2 - 4)
-        
+        # Dynamic: 1 widget gets all space, 2 widgets split, max 3
+        max_widgets = min(3, len(active))
+        widget_h = (avail_h - (max_widgets - 1) * 4) // max_widgets
+
         for wname, mod in active:
-            if shown >= 2:
+            if shown >= max_widgets:
                 break
-            widget_y = wy + 4 + shown * (widget_h + 8)
-            if widget_y + widget_h > H:
-                break
+            widget_y = wy + shown * (widget_h + 4)
             try:
-                result = mod.draw(hud, 10, widget_y, W - 20, widget_h, music)
+                result = mod.draw(hud, 6, widget_y, W - 12, widget_h, music)
                 if result:
                     shown += 1
             except Exception:
                 pass
 
-    # If no widgets, show logo
+    # No widgets — show logo
     if shown == 0:
         if hud.honda_logo:
-            target_h = min(80, avail_h - 20)
+            target_h = min(80, avail_h - 10)
             logo = hud.honda_logo
             scale = target_h / logo.get_height()
             logo = pygame.transform.smoothscale(
                 logo, (int(logo.get_width() * scale), target_h))
-            lx = (W - logo.get_width()) // 2
-            logo_y = wy + (avail_h - target_h) // 2
-            s.blit(logo, (lx, logo_y))
+            s.blit(logo, ((W - logo.get_width()) // 2, wy + (avail_h - target_h) // 2))
         else:
             ht = hud.font_lg.render("Car-HUD", True, t["primary_dim"])
             s.blit(ht, ((W - ht.get_width()) // 2, wy + avail_h // 2 - 20))

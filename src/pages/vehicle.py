@@ -135,9 +135,8 @@ def draw(hud, obd, music):
             _widget_cycle_idx = 0
         wname, mod = active[_widget_cycle_idx]
         
-        # Determine remaining height for the widget, keeping bottom pill in mind
-        pill_height = 30
-        widget_h = H - wly - pill_height
+        # Widget fills space between gauges and status strip
+        widget_h = H - wly - 24
         
         try:
             # Draw widget with slightly larger margin

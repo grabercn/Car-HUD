@@ -641,34 +641,52 @@ class CarHUD:
             cam_count = 1
             if cam_c == t["text_dim"]: cam_c = AMBER
 
-        modules = [("MIC", ac), ("OBD", oc), ("PHN", phone_c),
-                   ("NET", nc), ("CAM", cam_c)]
+        modules = [("mic", ac), ("obd", oc), ("phn", phone_c),
+                   ("net", nc), ("cam", cam_c)]
 
-        # Status indicators — dots with labels, evenly spaced
-        mw = W // len(modules)
-        for i, (name, color) in enumerate(modules):
-            mx = i * mw + mw // 2
-            pygame.draw.circle(s, color, (mx, sy + 5), 3)
-            mt = self.font_mono.render(name, True, color)
-            s.blit(mt, (mx - mt.get_width() // 2, sy + 12))
+        # ── Icon-only status strip — bold, legible ──
+        pygame.draw.line(s, t["border_lite"], (0, sy + 1), (W, sy + 1))
+        iw = W // len(modules)
+        for i, (icon, color) in enumerate(modules):
+            cx_i = i * iw + iw // 2
+            cy_i = sy + 14
 
-        # Mic level bar — thin line above status strip
+            if icon == "mic":
+                # Microphone — bold pill + base
+                pygame.draw.rect(s, color, (cx_i - 3, cy_i - 8, 6, 11), border_radius=3)
+                pygame.draw.arc(s, color, (cx_i - 6, cy_i - 5, 12, 12), 3.14, 6.28, 2)
+                pygame.draw.line(s, color, (cx_i, cy_i + 6), (cx_i, cy_i + 9), 2)
+                pygame.draw.line(s, color, (cx_i - 3, cy_i + 9), (cx_i + 3, cy_i + 9), 2)
+            elif icon == "obd":
+                # Car — simple side view
+                pygame.draw.rect(s, color, (cx_i - 8, cy_i - 2, 16, 7), border_radius=2)
+                pygame.draw.rect(s, color, (cx_i - 5, cy_i - 6, 10, 5), border_radius=2)
+                pygame.draw.circle(s, color, (cx_i - 5, cy_i + 6), 3)
+                pygame.draw.circle(s, color, (cx_i + 5, cy_i + 6), 3)
+            elif icon == "phn":
+                # Phone — bold rectangle
+                pygame.draw.rect(s, color, (cx_i - 4, cy_i - 9, 8, 18), border_radius=3)
+                pygame.draw.rect(s, t["bg"], (cx_i - 2, cy_i - 6, 4, 12), border_radius=1)
+                pygame.draw.line(s, color, (cx_i - 1, cy_i + 6), (cx_i + 1, cy_i + 6), 2)
+            elif icon == "net":
+                # WiFi — bold arcs
+                for r in [4, 8, 12]:
+                    pygame.draw.arc(s, color, (cx_i - r, cy_i - r + 4, r * 2, r * 2), 0.4, 2.7, 2)
+                pygame.draw.circle(s, color, (cx_i, cy_i + 4), 2)
+            elif icon == "cam":
+                # Camera — bold body + lens
+                pygame.draw.rect(s, color, (cx_i - 7, cy_i - 5, 14, 10), border_radius=3)
+                pygame.draw.circle(s, color, (cx_i - 1, cy_i), 4, 2)
+                pygame.draw.rect(s, color, (cx_i + 6, cy_i - 3, 5, 6))
+
+        # Mic level — subtle glow under mic icon
         self._read_voice_signal()
-        mic_w = W - 20
-        mic_y = sy - 3
-        half = mic_w // 2
-
-        pygame.draw.rect(s, t["border"], (10, mic_y, mic_w, 2), border_radius=1)
-
-        if self.mic1_level > 0.01:
-            lc = t["primary"] if self.mic1_level < 0.3 else GREEN if self.mic1_level < 0.6 else AMBER
-            fw = max(1, int(half * self.mic1_level))
-            pygame.draw.rect(s, lc, (10 + half - fw, mic_y, fw, 2), border_radius=1)
-
-        if self.mic2_level > 0.01:
-            rc = AMBER if self.mic2_level < 0.3 else GREEN if self.mic2_level < 0.6 else t["primary"]
-            fw = max(1, int(half * self.mic2_level))
-            pygame.draw.rect(s, rc, (10 + half, mic_y, fw, 2), border_radius=1)
+        if self.mic1_level > 0.01 or self.mic2_level > 0.01:
+            lvl = max(self.mic1_level, self.mic2_level)
+            lc = t["primary"] if lvl < 0.3 else GREEN if lvl < 0.6 else AMBER
+            fw = max(2, int(iw * 0.6 * lvl))
+            mic_cx = iw // 2
+            pygame.draw.rect(s, lc, (mic_cx - fw // 2, sy + 2, fw, 2), border_radius=1)
 
     def get_voice_state(self):
         """Read transcript and determine voice UI state."""
