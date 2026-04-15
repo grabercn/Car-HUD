@@ -14,7 +14,7 @@ _view_idx = 0
 _view_start = 0
 _anim_t = 0.0
 _anim_start = 0
-_ANIM_SECS = 0.5
+_ANIM_SECS = 1.2
 
 
 def draw(hud, obd, music):
@@ -112,7 +112,7 @@ def draw(hud, obd, music):
     if _anim_t == 0.0:
         if _view_start == 0:
             _view_start = now_t
-        if now_t - _view_start > pause and n > 1:
+        if _view_start > 0 and now_t - _view_start >= pause and n > 1:
             _anim_t = 0.001
             _anim_start = now_t
 

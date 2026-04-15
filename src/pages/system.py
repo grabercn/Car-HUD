@@ -1,4 +1,4 @@
-"""System page — time header, smooth widget carousel."""
+"""System page — time header, scrolling widget carousel."""
 
 import time
 import datetime
@@ -9,15 +9,15 @@ GREEN = (0, 180, 85)
 AMBER = (220, 160, 0)
 RED = (220, 45, 45)
 
-_view_idx = 0        # which pair is currently showing (0-based)
-_view_start = 0      # when this pair started showing
-_anim_t = 0.0        # 0.0 = resting, >0 = animating (0→1 over ANIM_SECS)
+_view_offset = 0     # which widget is at the top slot
+_view_start = 0      # when current view started
+_anim_t = 0.0        # animation progress (0→1)
 _anim_start = 0
-_ANIM_SECS = 0.6
+_ANIM_SECS = 1.5  # ~10 frames at 7fps
 
 
 def draw(hud, stats, music):
-    global _view_idx, _view_start, _anim_t, _anim_start
+    global _view_offset, _view_start, _anim_t, _anim_start
 
     W, H = hud.width, hud.height
     s = hud.surf
@@ -61,40 +61,50 @@ def draw(hud, stats, music):
         return
 
     n = len(active)
-    n_pairs = max(1, (n + 1) // 2)
 
-    # Get pause time from longest widget in current pair
-    i0 = (_view_idx * 2) % n
-    pause = getattr(active[i0][1], "view_time", 6)
+    # Single widget — draw it, no animation
+    if n == 1:
+        active[0][1].draw(hud, 6, wy, W - 12, avail_h, music)
+        return
 
-    # Trigger animation when pause expires
+    # 2 widgets exactly — show both, no scroll needed
+    if n == 2:
+        for j in range(2):
+            active[j][1].draw(hud, 6, wy + j * (widget_h + 4), W - 12, widget_h, music)
+        return
+
+    # 3+ widgets — show 2 at a time, scroll by 1 each cycle
+    top_mod = active[_view_offset % n][1]
+    pause = getattr(top_mod, "view_time", 6)
+
+    # Trigger scroll after pause
     if _anim_t == 0.0:
         if _view_start == 0:
             _view_start = now_t
-        if now_t - _view_start > pause and n_pairs > 1:
-            _anim_t = 0.001  # start
+        if _view_start > 0 and now_t - _view_start >= pause:
+            _anim_t = 0.001
             _anim_start = now_t
 
     # Advance animation
     if _anim_t > 0:
         _anim_t = min((now_t - _anim_start) / _ANIM_SECS, 1.0)
         if _anim_t >= 1.0:
-            _view_idx = (_view_idx + 1) % n_pairs
+            _view_offset = (_view_offset + 1) % n
             _anim_t = 0.0
             _view_start = now_t
 
     # Ease-out curve
     ease = 1.0 - (1.0 - _anim_t) ** 3 if _anim_t > 0 else 0.0
-    scroll_px = int(ease * avail_h)
+    scroll_px = int(ease * (widget_h + 4))
 
     # Clip to widget area
     clip = pygame.Rect(6, wy, W - 12, avail_h)
     old_clip = s.get_clip()
     s.set_clip(clip)
 
-    # Draw current pair (scrolling up/out)
-    for j in range(2):
-        wi = (_view_idx * 2 + j) % n
+    # Draw 3 widgets (current 2 + next one entering from below)
+    for j in range(3):
+        wi = (_view_offset + j) % n
         wname, mod = active[wi]
         draw_y = wy + j * (widget_h + 4) - scroll_px
         if draw_y + widget_h >= wy and draw_y < strip_y:
@@ -103,17 +113,5 @@ def draw(hud, stats, music):
             except Exception:
                 pass
 
-    # Draw next pair (scrolling in from below) — only during animation
-    if _anim_t > 0:
-        next_idx = (_view_idx + 1) % n_pairs
-        for j in range(2):
-            wi = (next_idx * 2 + j) % n
-            wname, mod = active[wi]
-            draw_y = wy + avail_h + j * (widget_h + 4) - scroll_px
-            if draw_y + widget_h >= wy and draw_y < strip_y:
-                try:
-                    mod.draw(hud, 6, draw_y, W - 12, widget_h, music)
-                except Exception:
-                    pass
-
     s.set_clip(old_clip)
+

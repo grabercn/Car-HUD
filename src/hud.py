@@ -1131,7 +1131,7 @@ class CarHUD:
             pass
 
     def run(self):
-        theme_check_timer = 0
+        theme_check_timer = 55  # check theme almost immediately on boot
 
         while self.running:
             # Process touch events from touch_service
