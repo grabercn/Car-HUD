@@ -1,4 +1,149 @@
-SETTINGS_HTML = '<!DOCTYPE html>\n<html><head><title>Car-HUD Settings</title>\n<meta name="viewport" content="width=device-width">\n<style>\n*{margin:0;padding:0;box-sizing:border-box}\nbody{background:#0a0a12;color:#ccc;font-family:monospace;padding:50px 12px 12px}\nnav{position:fixed;top:0;left:0;width:100%;background:rgba(0,0,0,0.9);padding:6px 12px;display:flex;gap:16px;z-index:10;font-size:12px}\nnav a{color:#0af;text-decoration:none}\nh2{color:#0af;margin:14px 0 6px;font-size:13px}\n.card{background:#111;border:1px solid #222;border-radius:6px;padding:10px;margin:6px 0}\n.row{display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:11px}\n.dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}\n.g{background:#0a4}.a{background:#da0}.r{background:#d33}.d{background:#333}\nbutton{background:#0af;color:#000;border:none;padding:4px 10px;border-radius:3px;cursor:pointer;font:11px monospace}\nbutton:hover{background:#0cf}\ninput,select{background:#1a1a2a;border:1px solid #333;color:#ccc;padding:4px 8px;border-radius:3px;font:11px monospace}\n.item{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #1a1a1a;font-size:11px}\n.dim{color:#567}\n#log{background:#050510;border:1px solid #1a1a1a;padding:6px;margin-top:8px;font-size:10px;max-height:80px;overflow-y:auto;border-radius:3px}\n.toggle{display:flex;align-items:center;gap:8px}\n</style></head><body>\n<nav><a href="/">HUD</a><a href="/camera">Camera</a><a href="/dashcam">Recordings</a>\n<a href="/settings">Settings</a></nav>\n\n<h2>WiFi</h2>\n<div class="card">\n<div class="row"><span id="ws">...</span><button onclick="scanW()">Scan</button></div>\n<div id="wn"></div>\n<div class="row" style="margin-top:6px"><input id="ss" placeholder="SSID" style="width:120px"><input id="pw" placeholder="Password" type="password" style="width:120px"><button onclick="conW()">Connect</button></div>\n</div>\n\n<h2>Bluetooth</h2>\n<div class="card">\n<div class="row"><span id="bs">...</span><button onclick="scanB()">Scan</button></div>\n<div id="bd"></div>\n<div class="row toggle"><span>Audio Streaming</span><button id="aud-btn" onclick="togAud()">ON</button></div>\n</div>\n\n<h2>Theme</h2>\n<div class="card"><div class="row">\n<select id="ts" onchange="setT()">\n<option value="auto">Auto Day/Night</option>\n<option value="blue">Blue</option><option value="red">Red</option>\n<option value="green">Green</option><option value="amber">Amber</option>\n<option value="day">Day</option><option value="night">Night</option>\n</select></div></div>\n\n<h2>Widgets</h2>\n<div class="card" id="wdg">Loading...</div>\n\n<h2>System</h2>\n<div class="card" id="sys">...</div>\n\n<h2>Music</h2>\n<div class="card" id="mus">...</div>\n\n<div id="log"></div>\n\n<script>\nconst L=m=>{const l=document.getElementById(\'log\');l.innerHTML+=m+\'<br>\';l.scrollTop=9999};\nlet audOn=true;\n\nasync function load(){try{\nconst d=await(await fetch(\'/status\')).json();\nconst w=d.wifi||{};const ws=w.state||\'?\';\nconst dc=ws==\'connected\'||ws==\'tethered\'?\'g\':ws==\'connecting\'?\'a\':\'d\';\ndocument.getElementById(\'ws\').innerHTML=\'<span class="dot \'+dc+\'"></span>\'+(w.ssid||ws);\n\nlet s=\'\';\nif(d.obd){const o=d.obd;s+=\'<div class="row">OBD: <span class="dot \'+(o.connected?\'g\':\'d\')+\'"></span>\'+(o.connected?o.adapter||\'Connected\':o.status)+\'</div>\'}\nif(d.dashcam){s+=\'<div class="row">Cam: \'+(d.dashcam.recording?\'REC\':\'Idle\')+\' \'+d.dashcam.size_mb+\'MB / \'+d.dashcam.cam_count+\' cam(s)</div>\'}\ns+=\'<div class="row">Mic: \'+(d.mic||\'none\')+\'</div>\';\ndocument.getElementById(\'sys\').innerHTML=s;\n\n// Music\nconst m=d.obd;// placeholder\ntry{\nconst md=await(await fetch(\'/status\')).json();\nif(md.music){document.getElementById(\'mus\').innerHTML=md.music.playing?md.music.track+\' - \'+md.music.artist:\'Not playing\'}\n}catch(e){}\n}catch(e){}}\n\nasync function scanW(){L(\'Scanning...\');try{\nconst d=await(await fetch(\'/api/wifi/scan\')).json();\nlet h=\'\';for(const n of d)h+=\'<div class="item"><span>\'+n.ssid+\'</span><span class="dim">\'+n.signal+\'%</span></div>\';\ndocument.getElementById(\'wn\').innerHTML=h;L(d.length+\' networks\');}catch(e){L(\'Error\')}}\n\nasync function conW(){const s=document.getElementById(\'ss\').value,p=document.getElementById(\'pw\').value;\nif(!s){L(\'Enter SSID\');return}L(\'Connecting...\');\nconst r=await(await fetch(\'/api/wifi/connect\',{method:\'POST\',body:\'ssid=\'+encodeURIComponent(s)+\'&password=\'+encodeURIComponent(p)})).json();\nL(r.success?\'Connected!\':\'Failed: \'+r.msg);setTimeout(load,3000)}\n\nasync function scanB(){L(\'Scanning BT (8s)...\');\nconst d=await(await fetch(\'/api/bt/scan\')).json();\nlet h=\'\';for(const v of d)h+=\'<div class="item"><span>\'+v.name+\'</span><button onclick="pairB(\\\'\'+v.mac+\'\\\')">Pair</button></div>\';\ndocument.getElementById(\'bd\').innerHTML=h;L(d.length+\' devices\')}\n\nasync function pairB(mac){L(\'Pairing \'+mac+\'...\');\nawait fetch(\'/api/bt/pair\',{method:\'POST\',body:\'mac=\'+encodeURIComponent(mac)});L(\'Paired\')}\n\nasync function togAud(){audOn=!audOn;\nawait fetch(\'/api/bt/audio\',{method:\'POST\',body:\'enable=\'+audOn});\ndocument.getElementById(\'aud-btn\').textContent=audOn?\'ON\':\'OFF\';L(\'Audio \'+(audOn?\'enabled\':\'disabled\'))}\n\nasync function setT(){const t=document.getElementById(\'ts\').value;\nawait fetch(\'/api/theme/set\',{method:\'POST\',body:\'theme=\'+(t==\'auto\'?\'blue\':t)+\'&auto=\'+(t==\'auto\')});L(\'Theme: \'+t)}\n\nasync function loadW(){try{\nconst d=await(await fetch(\'/api/widgets\')).json();\nlet h=\'\';for(const w of d)h+=\'<div class="item"><span>\'+w.name+\' <span class="dim">(p:\'+w.priority+\')</span></span><button onclick="togW(this)" data-name="\'+w.name+\'" data-en="\'+(!w.enabled)+\'">\'+((w.enabled)?\'ON\':\'OFF\')+\'</button></div>\';\ndocument.getElementById(\'wdg\').innerHTML=h||\'No widgets\';}catch(e){document.getElementById(\'wdg\').innerHTML=\'Error\'}}\n\nasync function togW(el){var n=el.dataset.name,en=el.dataset.en;L(\'Widget \'+n+\': \'+en);\nawait fetch(\'/api/widget/set\',{method:\'POST\',body:\'name=\'+encodeURIComponent(n)+\'&enabled=\'+en});\nloadW()}\n\nasync function loadTheme(){try{const d=await(await fetch(\'/api/theme\')).json();const s=document.getElementById(\'ts\');if(d.auto)s.value=\'auto\';else if(d.theme)s.value=d.theme;}catch(e){}}\nload();loadW();loadTheme();setInterval(load,5000);\n</script></body></html>'
+SETTINGS_HTML = """<!DOCTYPE html>
+<html><head><title>Car-HUD Settings</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--bg:#0b0d14;--card:#12151e;--border:#1e2235;--accent:#0af;--text:#d0d4e0;--dim:#5a6080;--green:#2dcc70;--amber:#f0ad30;--red:#e74c3c}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;padding:52px 14px 20px;font-size:14px}
+nav{position:fixed;top:0;left:0;width:100%;background:rgba(11,13,20,0.95);backdrop-filter:blur(10px);padding:10px 14px;display:flex;gap:20px;z-index:10;border-bottom:1px solid var(--border)}
+nav a{color:var(--accent);text-decoration:none;font-weight:600;font-size:13px;opacity:0.7;transition:opacity 0.2s}
+nav a:hover,nav a.active{opacity:1}
+h2{color:var(--accent);margin:18px 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:1.5px;font-weight:700}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;margin:6px 0;transition:border-color 0.2s}
+.card:hover{border-color:#2a3050}
+.row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;gap:8px}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:8px;flex-shrink:0}
+.g{background:var(--green)}.a{background:var(--amber)}.r{background:var(--red)}.d{background:#333}
+button{background:var(--accent);color:#000;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font:600 12px system-ui;transition:all 0.2s}
+button:hover{background:#3cf;transform:translateY(-1px)}
+button:active{transform:translateY(0)}
+.btn-off{background:#333;color:#888}
+.btn-danger{background:var(--red);color:#fff}
+input,select{background:#0a0c14;border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font:13px system-ui;width:100%;transition:border-color 0.2s}
+input:focus,select:focus{outline:none;border-color:var(--accent)}
+.input-row{display:flex;gap:8px;margin-top:8px}
+.input-row input{flex:1}
+.item{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:13px}
+.item:last-child{border-bottom:none}
+.dim{color:var(--dim);font-size:11px}
+.status{display:flex;align-items:center;gap:6px;font-size:13px}
+#log{background:#06080e;border:1px solid var(--border);padding:8px;margin-top:12px;font-size:11px;max-height:100px;overflow-y:auto;border-radius:8px;font-family:monospace;color:var(--dim)}
+.music-card{display:flex;align-items:center;gap:12px;padding:10px}
+.music-card .art{width:48px;height:48px;border-radius:6px;background:#1a1d28;flex-shrink:0}
+.music-card .info{flex:1;min-width:0}
+.music-card .track{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.music-card .artist{color:var(--dim);font-size:12px}
+</style></head><body>
+<nav>
+<a href="/">HUD</a>
+<a href="/camera">Camera</a>
+<a href="/dashcam">Recordings</a>
+<a href="/settings" class="active">Settings</a>
+</nav>
+
+<h2>WiFi</h2>
+<div class="card">
+<div class="row"><span class="status" id="ws">Loading...</span><button onclick="scanW()">Scan Networks</button></div>
+<div id="wn"></div>
+<div class="input-row">
+<input id="ss" placeholder="Network name (SSID)">
+<input id="pw" placeholder="Password" type="password">
+<button onclick="conW()">Connect</button>
+</div>
+</div>
+
+<h2>Bluetooth</h2>
+<div class="card">
+<div class="row"><span class="status" id="bs">Ready</span><button onclick="scanB()">Scan Devices</button></div>
+<div id="bd"></div>
+<div class="row" style="margin-top:8px">
+<span>Spotify Connect (Raspotify)</span>
+<button id="aud-btn" onclick="togAud()">ON</button>
+</div>
+</div>
+
+<h2>Theme</h2>
+<div class="card"><div class="row">
+<select id="ts" onchange="setT()">
+<option value="auto">Auto (Day/Night)</option>
+<option value="blue">Blue</option><option value="red">Red</option>
+<option value="green">Green</option><option value="amber">Amber</option>
+<option value="day">Day</option><option value="night">Night</option>
+</select></div></div>
+
+<h2>Widgets</h2>
+<div class="card" id="wdg">Loading...</div>
+
+<h2>System</h2>
+<div class="card" id="sys">Loading...</div>
+
+<h2>Now Playing</h2>
+<div class="card" id="mus"><div class="dim">Not playing</div></div>
+
+<div id="log"></div>
+
+<script>
+const $=id=>document.getElementById(id);
+const L=m=>{const l=$('log');l.innerHTML+='<span style="color:#3a4060">'+new Date().toLocaleTimeString()+'</span> '+m+'<br>';l.scrollTop=9999};
+let audOn=true;
+
+async function load(){try{
+const d=await(await fetch('/status')).json();
+const w=d.wifi||{};const ws=w.state||'offline';
+const dc=ws=='connected'||ws=='tethered'?'g':ws=='connecting'?'a':'d';
+$('ws').innerHTML='<span class="dot '+dc+'"></span>'+(w.ssid||ws);
+
+let s='';
+if(d.obd){const o=d.obd;s+='<div class="row"><span class="status"><span class="dot '+(o.connected?'g':'d')+'"></span>OBD '+(o.connected?'Connected':'Offline')+'</span>'+(o.connected?'<span class="dim">'+o.adapter+'</span>':'')+'</div>'}
+if(d.dashcam&&typeof d.dashcam==='object'){s+='<div class="row"><span>'+(d.dashcam.recording?'<span style="color:var(--red)">REC</span>':'Idle')+' &mdash; '+d.dashcam.cam_count+' cam(s)</span><span class="dim">'+Math.round(d.dashcam.size_mb||0)+' MB</span></div>'}
+$('sys').innerHTML=s||'<div class="dim">All systems nominal</div>';
+
+// Music
+if(d.music&&typeof d.music==='object'&&d.music.playing){
+const m=d.music;
+$('mus').innerHTML='<div class="music-card"><div class="art" style="background:var(--accent);opacity:0.3"></div><div class="info"><div class="track">'+m.track+'</div><div class="artist">'+m.artist+'</div></div><span class="dim">'+(m.device||'')+'</span></div>';
+}else{$('mus').innerHTML='<div class="dim" style="padding:4px">Not playing</div>'}
+}catch(e){}}
+
+async function scanW(){L('Scanning WiFi...');$('wn').innerHTML='<div class="dim" style="padding:8px">Scanning...</div>';try{
+const d=await(await fetch('/api/wifi/scan')).json();
+let h='';for(const n of d)h+='<div class="item"><span>'+n.ssid+'</span><span class="dim">'+n.signal+'% '+n.security+'</span></div>';
+$('wn').innerHTML=h;L(d.length+' networks found');}catch(e){L('Scan failed');$('wn').innerHTML=''}}
+
+async function conW(){const s=$('ss').value,p=$('pw').value;
+if(!s){L('Enter SSID');return}L('Connecting to '+s+'...');
+try{const r=await(await fetch('/api/wifi/connect',{method:'POST',body:'ssid='+encodeURIComponent(s)+'&password='+encodeURIComponent(p)})).json();
+L(r.success?'Connected!':'Failed: '+r.msg);if(r.success)setTimeout(load,2000)}catch(e){L('Connection error')}}
+
+async function scanB(){L('Scanning Bluetooth (8s)...');$('bs').innerHTML='Scanning...';$('bd').innerHTML='<div class="dim" style="padding:8px">Searching for devices...</div>';
+try{const d=await(await fetch('/api/bt/scan')).json();
+let h='';for(const v of d)h+='<div class="item"><span>'+v.name+'<br><span class="dim">'+v.mac+'</span></span><button onclick="pairB(this,\\''+v.mac+'\\')">Pair</button></div>';
+$('bd').innerHTML=h||'<div class="dim">No devices found</div>';$('bs').innerHTML='Ready';L(d.length+' devices')}catch(e){$('bs').innerHTML='Ready';L('Scan error')}}
+
+async function pairB(btn,mac){btn.textContent='Pairing...';btn.disabled=true;L('Pairing '+mac+'...');
+try{await fetch('/api/bt/pair',{method:'POST',body:'mac='+encodeURIComponent(mac)});btn.textContent='Paired';L('Paired!')}catch(e){btn.textContent='Failed';L('Pair failed')}}
+
+async function togAud(){audOn=!audOn;
+$('aud-btn').textContent=audOn?'ON':'OFF';$('aud-btn').className=audOn?'':'btn-off';
+await fetch('/api/bt/audio',{method:'POST',body:'enable='+audOn});L('Audio '+(audOn?'enabled':'disabled'))}
+
+async function setT(){const t=$('ts').value;
+await fetch('/api/theme/set',{method:'POST',body:'theme='+(t=='auto'?'blue':t)+'&auto='+(t=='auto')});L('Theme: '+t)}
+
+async function loadW(){try{
+const d=await(await fetch('/api/widgets')).json();
+let h='';for(const w of d){
+const cls=w.enabled?'':'btn-off';
+h+='<div class="item"><span>'+w.name+'</span><button class="'+cls+'" onclick="togW(this)" data-name="'+w.name+'" data-en="'+(!w.enabled)+'">'+(w.enabled?'ON':'OFF')+'</button></div>'}
+$('wdg').innerHTML=h||'<div class="dim">No widgets</div>'}catch(e){$('wdg').innerHTML='<div class="dim">Error loading</div>'}}
+
+async function togW(el){const n=el.dataset.name,en=el.dataset.en;L('Widget '+n+': '+en);
+await fetch('/api/widget/set',{method:'POST',body:'name='+encodeURIComponent(n)+'&enabled='+en});loadW()}
+
+async function loadTheme(){try{const d=await(await fetch('/api/theme')).json();const s=$('ts');if(d.auto)s.value='auto';else if(d.theme)s.value=d.theme}catch(e){}}
+
+load();loadW();loadTheme();setInterval(load,4000);
+</script></body></html>"""
 
 #!/usr/bin/env python3
 """Car-HUD Web Server
@@ -123,30 +268,27 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b"""<!DOCTYPE html>
 <html><head><title>Car-HUD</title>
-<meta name="viewport" content="width=device-width">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:#000;color:#fff;font-family:monospace}
+body{background:#000;color:#fff;font-family:system-ui,sans-serif}
 .view{width:100vw;height:100vh;display:flex;justify-content:center;align-items:center}
 img{width:100%;height:100%;object-fit:contain;image-rendering:pixelated}
-nav{position:fixed;top:0;left:0;width:100%;background:rgba(0,0,0,0.8);padding:6px 12px;display:flex;gap:16px;z-index:10;font-size:12px}
-nav a{color:#0af;text-decoration:none}
-nav a:hover{color:#fff}
-.keys{position:fixed;bottom:6px;left:0;width:100%;text-align:center;color:#345;font-size:10px}
+nav{position:fixed;top:0;left:0;width:100%;background:rgba(0,0,0,0.9);backdrop-filter:blur(10px);padding:10px 14px;display:flex;gap:20px;z-index:10;border-bottom:1px solid #1e2235}
+nav a{color:#0af;text-decoration:none;font-weight:600;font-size:13px;opacity:0.7;transition:opacity 0.2s}
+nav a:hover,nav a.active{opacity:1}
 </style></head><body>
 <nav>
-<a href="/">HUD</a>
-<a href="/camera">Cameras</a>
-<a href="/dashcam">Recordings</a>\n<a href="/settings">Settings</a>
+<a href="/" class="active">HUD</a>
+<a href="/camera">Camera</a>
+<a href="/dashcam">Recordings</a>
+<a href="/settings">Settings</a>
 </nav>
-<div class="view" style="padding-top:24px"><img id="hud" src="/stream"></div>
-<div class="keys">C:Cam H:Help 1-6:Theme ESC:Close</div>
+<div class="view" style="padding-top:36px"><img id="hud" src="/stream"></div>
 <script>
-document.addEventListener('keydown',(e)=>{
-  const map={c:'camera',h:'help','1':'blue','2':'red','3':'green','4':'amber','5':'day','6':'night',
-             Escape:'escape',F1:'calibrate'};
-  const cmd=map[e.key];
-  if(cmd) fetch('/key/'+cmd);
+document.addEventListener('keydown',e=>{
+  const map={c:'camera',h:'help','1':'blue','2':'red','3':'green','4':'amber','5':'day','6':'night',Escape:'escape',F1:'calibrate'};
+  if(map[e.key]) fetch('/key/'+map[e.key]);
 });
 </script>
 </body></html>""")
@@ -446,17 +588,29 @@ a{{color:#0af}}
     def serve_status(self):
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         status = {}
-        for f, k in [("/tmp/car-hud-obd-data", "obd"),
-                      ("/tmp/car-hud-voice-signal", "voice"),
-                      ("/tmp/car-hud-wifi-data", "wifi"),
-                      ("/tmp/car-hud-dashcam-data", "dashcam"),
-                      ("/tmp/car-hud-mic-level", "mic"),
-                      ("/tmp/car-hud-music-data", "music")]:
+        json_files = {
+            "/tmp/car-hud-obd-data": "obd",
+            "/tmp/car-hud-wifi-data": "wifi",
+            "/tmp/car-hud-dashcam-data": "dashcam",
+            "/tmp/car-hud-music-data": "music",
+            "/tmp/car-hud-voice-signal": "voice",
+        }
+        text_files = {
+            "/tmp/car-hud-mic-level": "mic",
+        }
+        for f, k in json_files.items():
             try:
                 with open(f) as fh:
-                    status[k] = json.load(fh) if "data" in f or "signal" in f else fh.read()
+                    status[k] = json.load(fh)
+            except Exception:
+                pass
+        for f, k in text_files.items():
+            try:
+                with open(f) as fh:
+                    status[k] = fh.read().strip()
             except Exception:
                 pass
         self.wfile.write(json.dumps(status).encode())
