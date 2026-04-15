@@ -155,9 +155,13 @@ class CarHUD:
         self.screen = pygame.display.set_mode(
             (self.display_w, self.display_h), pygame.FULLSCREEN | pygame.NOFRAME)
 
-        self.width = self.TARGET_W
-        self.height = self.TARGET_H
-        self.surf = pygame.Surface((self.width, self.height))
+        # Render directly to screen — no intermediate surface, no scaling
+        self.width = self.display_w if self.display_w <= 640 else self.TARGET_W
+        self.height = self.display_h if self.display_h <= 480 else self.TARGET_H
+        if self.width == self.display_w and self.height == self.display_h:
+            self.surf = self.screen  # direct rendering — zero copy
+        else:
+            self.surf = pygame.Surface((self.width, self.height))
         pygame.mouse.set_visible(False)
 
         # Use bold fonts everywhere for 2.5" TFT visibility
@@ -364,16 +368,12 @@ class CarHUD:
             pass
 
     def draw_glow_text(self, text, font, color, pos, glow_color=None, glow_dist=1):
-        """Draw text with a subtle glow/shadow for better readability."""
+        """Draw text with subtle glow/shadow."""
         if glow_color is None:
-            glow_color = (0, 0, 0, 150)
-        
-        # Draw shadow/glow offset
+            glow_color = (0, 0, 0)
         st = font.render(text, True, glow_color)
-        for dx, dy in [(-glow_dist, 0), (glow_dist, 0), (0, -glow_dist), (0, glow_dist)]:
+        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
             self.surf.blit(st, (pos[0] + dx, pos[1] + dy))
-        
-        # Main text
         mt = font.render(text, True, color)
         self.surf.blit(mt, pos)
 
@@ -1115,8 +1115,9 @@ class CarHUD:
         if self.display_w == self.width and self.display_h == self.height:
             self.screen.blit(self.surf, (0, 0))
         else:
-            scaled = pygame.transform.smoothscale(self.surf,
-                                                  (self.display_w, self.display_h))
+            # Fast scale (no smoothing) — smoothscale was killing FPS
+            scaled = pygame.transform.scale(self.surf,
+                                            (self.display_w, self.display_h))
             self.screen.blit(scaled, (0, 0))
         pygame.display.flip()
 

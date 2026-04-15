@@ -17,6 +17,8 @@ import time
 
 _online = False
 _online_check_time = 0
+_active_cache = []
+_active_cache_time = 0
 
 _widgets = []
 _loaded = False
@@ -75,9 +77,12 @@ def is_online():
 
 
 def get_active(hud, music):
-    """Return active widgets sorted by effective priority (base + urgency).
-    Respects requires_online flag — skips widgets that need internet when offline.
-    """
+    """Return active widgets sorted by priority. Cached for 2 seconds."""
+    global _active_cache, _active_cache_time
+    now = time.time()
+    if now - _active_cache_time < 2 and _active_cache:
+        return _active_cache
+
     _load_widgets()
     config = _load_config()
     online = is_online()
@@ -86,7 +91,6 @@ def get_active(hud, music):
         wname = mod.name.lower()
         if not config.get(wname, {}).get("enabled", True):
             continue
-        # Skip widgets that require internet when offline
         if getattr(mod, "requires_online", False) and not online:
             continue
         try:
@@ -100,7 +104,9 @@ def get_active(hud, music):
             pass
 
     active.sort(key=lambda x: x[0])
-    return [(name, mod) for _, name, mod in active]
+    _active_cache = [(name, mod) for _, name, mod in active]
+    _active_cache_time = now
+    return _active_cache
 
 
 def get_all():
