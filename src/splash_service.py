@@ -138,13 +138,14 @@ def main():
     f_reg = lib_reg if os.path.exists(lib_reg) else dv_reg
     f_bold = lib_bold if os.path.exists(lib_bold) else dv_bold
 
-    # All bold, optimized for 2.5" TFT
-    font_xl = pygame.font.Font(f_bold, 42)
-    font_lg = pygame.font.Font(f_bold, 32)
-    font_md = pygame.font.Font(f_bold, 24)
-    font_sm = pygame.font.Font(f_reg, 18)
-    font_xs = pygame.font.Font(f_reg, 14)
-    font_bold_xs = pygame.font.Font(f_bold, 14)
+    # Scale fonts to display resolution
+    scale = max(dw / 480, 1.0)
+    font_xl = pygame.font.Font(f_bold, int(42 * scale))
+    font_lg = pygame.font.Font(f_bold, int(32 * scale))
+    font_md = pygame.font.Font(f_bold, int(24 * scale))
+    font_sm = pygame.font.Font(f_reg, int(18 * scale))
+    font_xs = pygame.font.Font(f_reg, int(14 * scale))
+    font_bold_xs = pygame.font.Font(f_bold, int(14 * scale))
 
     # Boot time calibration
     boot_times, avg_boot = load_boot_data()
@@ -161,25 +162,22 @@ def main():
     signal.signal(signal.SIGHUP, save_and_exit)
     signal.signal(signal.SIGTERM, save_and_exit)
 
-    # Bar geometry — sleek and centered
-    bar_w = int(dw * 0.75)
-    bar_h = 4
+    # Bar geometry — scaled to display
+    bar_w = int(dw * 0.65)
+    bar_h = max(4, int(6 * scale))
     bar_x = (dw - bar_w) // 2
-    bar_y = dh - 40
+    bar_y = dh - int(50 * scale)
 
-def get_update_status():
-    try:
-        with open("/tmp/car-hud-update-status") as f:
-            data = json.load(f)
-            if time.time() - data.get("time", 0) < 30:
-                return data
-    except Exception:
-        pass
-    return None
+    def get_update_status():
+        try:
+            with open("/tmp/car-hud-update-status") as f:
+                data = json.load(f)
+                if time.time() - data.get("time", 0) < 30:
+                    return data
+        except Exception:
+            pass
+        return None
 
-
-def main():
-...
     # Smooth animation state
     display_pos = 0.0      # what's actually shown (0-1), moves silkily
     last_frame_time = time.monotonic()
@@ -228,13 +226,35 @@ def main():
             clock.tick(30)
             continue
 
-        # Standard Boot Mode
+        # Standard Boot Mode — splash image + progress bar
         raw_t = min(elapsed / avg_boot, 1.0)
-...
 
+        # Smooth the progress bar
+        display_pos += (raw_t - display_pos) * 0.1
+
+        # Draw splash background
+        screen.blit(splash_surf, (0, 0))
+
+        # Update banner if just updated
+        if updated:
+            ver = ""
+            try:
+                with open(VERSION_FILE) as vf:
+                    ver = vf.read().strip()[:8]
+            except Exception:
+                pass
+            banner = f"UPDATED TO {ver}" if ver else "SYSTEM UPDATED"
+            bt = font_sm.render(banner, True, (0, 200, 100))
+            screen.blit(bt, ((dw - bt.get_width()) // 2, bar_y - 24))
+
+        # Progress bar
+        pygame.draw.rect(screen, (20, 20, 30), (bar_x, bar_y, bar_w, bar_h), border_radius=2)
+        fill_w = int(bar_w * display_pos)
+        if fill_w > 0:
+            pygame.draw.rect(screen, (0, 150, 255), (bar_x, bar_y, fill_w, bar_h), border_radius=2)
 
         pygame.display.flip()
-        clock.tick(60)
+        clock.tick(30)
 
     # Save this boot's splash duration
     actual = time.monotonic() - start_time
