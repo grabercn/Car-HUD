@@ -1,4 +1,4 @@
-"""Bluetooth Phone widget."""
+"""Bluetooth Phone widget — shows connected device info."""
 
 import time
 import subprocess
@@ -7,7 +7,7 @@ import pygame
 name = "Phone"
 priority = 10
 
-_cache = {"connected": False, "name": "", "last_check": 0}
+_cache = {"connected": False, "name": "", "mac": "", "battery": "", "last_check": 0}
 
 
 def is_active(hud, music):
@@ -24,7 +24,8 @@ def is_active(hud, music):
             for line in bt.stdout.splitlines():
                 if "Name:" in line:
                     _cache["name"] = line.split("Name:")[1].strip()
-                    break
+                elif "Battery" in line and "%" in line:
+                    _cache["battery"] = line.strip()
         else:
             _cache["connected"] = False
     except Exception:
@@ -37,9 +38,18 @@ def draw(hud, x, y, w, h, music):
     s = hud.surf
     t = hud.t
 
-    # BT icon dot
-    pygame.draw.circle(s, t["primary"], (x + 8, y + 10), 4)
-    pt = hud.font_sm.render(f"BT: {_cache['name']}", True, t["text_bright"])
-    s.blit(pt, (x + 18, y + 3))
+    # Phone icon (filled circle)
+    pygame.draw.circle(s, t["primary"], (x + 10, y + 12), 6)
+    pygame.draw.circle(s, t["bg"], (x + 10, y + 12), 4)
+    pygame.draw.circle(s, t["primary"], (x + 10, y + 12), 2)
+
+    # Name — large
+    nt = hud.font_md.render(_cache["name"], True, t["text_bright"])
+    s.blit(nt, (x + 22, y + 2))
+
+    # Status line
+    status = "Connected via Bluetooth"
+    st = hud.font_sm.render(status, True, t["text_med"])
+    s.blit(st, (x + 22, y + 22))
 
     return True

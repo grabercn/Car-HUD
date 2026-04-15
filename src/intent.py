@@ -225,6 +225,26 @@ INTENTS = {
                      "show commands", "list commands", "what are my options",
                      "what do you do", "what can i say"],
     },
+    "widget_show": {
+        "action": "widget", "target": "show",
+        "keywords": {"show": 2, "enable": 3, "widget": 3, "turn": 1, "on": 1,
+                     "display": 2, "add": 2},
+        "phrases": ["show widget", "enable widget", "turn on widget",
+                     "show music widget", "show phone widget", "show network widget",
+                     "show clock widget", "show dashcam widget",
+                     "enable music", "enable phone", "enable network",
+                     "add widget"],
+    },
+    "widget_hide": {
+        "action": "widget", "target": "hide",
+        "keywords": {"hide": 3, "disable": 3, "widget": 3, "turn": 1, "off": 1,
+                     "remove": 2},
+        "phrases": ["hide widget", "disable widget", "turn off widget",
+                     "hide music widget", "hide phone widget", "hide network widget",
+                     "hide clock widget", "hide dashcam widget",
+                     "disable music", "disable phone", "disable network",
+                     "remove widget"],
+    },
 }
 
 

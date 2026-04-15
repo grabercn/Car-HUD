@@ -1,14 +1,14 @@
-"""Clock / Temperature widget."""
+"""Clock / Date / Temperature widget."""
 
 import datetime
 import pygame
 
 name = "Clock"
-priority = 99  # lowest — fallback widget
+priority = 99
 
 
 def is_active(hud, music):
-    return True  # always available
+    return True
 
 
 def draw(hud, x, y, w, h, music):
@@ -16,12 +16,20 @@ def draw(hud, x, y, w, h, music):
     t = hud.t
     now = datetime.datetime.now()
 
-    ts = hud.font_md.render(now.strftime("%I:%M %p"), True, t["text_med"])
-    s.blit(ts, (x, y + 2))
+    # Large time
+    time_str = now.strftime("%I:%M %p")
+    ts = hud.font_lg.render(time_str, True, t["text_bright"])
+    s.blit(ts, (x, y))
 
+    # Date on right
+    date_str = now.strftime("%b %d")
+    dt = hud.font_sm.render(date_str, True, t["text_med"])
+    s.blit(dt, (x + w - dt.get_width(), y + 4))
+
+    # Ambient temp if available
     amb = hud.smooth_data.get("AMBIANT_AIR_TEMP")
     if amb:
-        at = hud.font_md.render(f"{amb:.0f}°C", True, t["text_dim"])
-        s.blit(at, (x + w - at.get_width(), y + 2))
+        at = hud.font_sm.render(f"{amb:.0f}°C", True, t["text_dim"])
+        s.blit(at, (x + w - at.get_width(), y + 22))
 
     return True

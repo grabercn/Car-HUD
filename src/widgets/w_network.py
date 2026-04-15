@@ -1,4 +1,4 @@
-"""Network / WiFi widget."""
+"""Network / WiFi widget — connection details."""
 
 import json
 import pygame
@@ -31,14 +31,22 @@ def draw(hud, x, y, w, h, music):
     ip = wd.get("ip", "")
 
     color = t["primary"] if state == "connected" else (0, 180, 85)
-    label = f"WiFi: {ssid}" if state == "connected" else "USB Tethered"
 
-    pygame.draw.circle(s, color, (x + 8, y + 10), 4)
-    nt = hud.font_sm.render(label, True, t["text_bright"])
-    s.blit(nt, (x + 18, y + 3))
+    # WiFi icon (signal bars)
+    bx = x + 4
+    for i in range(4):
+        bh = 4 + i * 4
+        bc = color if True else t["border"]
+        pygame.draw.rect(s, bc, (bx + i * 6, y + 20 - bh, 4, bh), border_radius=1)
 
-    if ip:
-        it = hud.font_xs.render(ip, True, t["text_dim"])
-        s.blit(it, (x + 18, y + 20))
+    # SSID — large
+    label = ssid if state == "connected" else "USB Tethered"
+    nt = hud.font_md.render(label, True, t["text_bright"])
+    s.blit(nt, (x + 32, y + 2))
+
+    # IP and status
+    info = ip if ip else state
+    it = hud.font_sm.render(info, True, t["text_med"])
+    s.blit(it, (x + 32, y + 22))
 
     return True

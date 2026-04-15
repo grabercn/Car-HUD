@@ -666,28 +666,11 @@ class CarHUD:
             mt = self.font_xs.render(name, True, color)
             s.blit(mt, (mx + (mw - mt.get_width()) // 2, my + 10))
 
-            if name == "PHN":
-                try:
-                    bt_info = subprocess.run(
-                        ["bluetoothctl", "info"],
-                        capture_output=True, text=True, timeout=2)
-                    for bline in bt_info.stdout.splitlines():
-                        if "Name:" in bline:
-                            pname = bline.split("Name:")[1].strip()[:8]
-                            ptext = self.font_xs.render(pname, True, color)
-                            s.blit(ptext, (mx + (mw - ptext.get_width()) // 2, my - 12))
-                            break
-                except Exception:
-                    pass
-            if name == "NET" and net_ssid:
-                st = self.font_xs.render(net_ssid[:10].upper(), True, color)
-                s.blit(st, (mx + (mw - st.get_width()) // 2, my - 12))
-
-        # Mic level bar — centered under AUD indicator
+        # Mic level bar — draw BEHIND the AUD text
         self._read_voice_signal()
         aud_x = 0 * mw + 4
         mic_w = mw - 8
-        mic_y = my + 18
+        mic_y = my + 8
         half = mic_w // 2
 
         # Background
@@ -1340,6 +1323,16 @@ class CarHUD:
                             self.present()
                             self.clock_t.tick(30)
                             continue
+                        elif vsig.get("action") == "widget":
+                            # Voice widget control: "show/hide <name> widget"
+                            raw = vsig.get("raw", "").lower()
+                            import widgets as _widgets
+                            for wmod in _widgets.get_all():
+                                wn = wmod["name"].lower()
+                                if wn in raw:
+                                    enable = vsig.get("target") == "show"
+                                    _widgets.set_enabled(wn, enable)
+                                    break
                         elif vsig.get("action") == "system" and vsig.get("target") == "calibrate":
                             subprocess.Popen(
                                 ["python3", "/home/chrismslist/car-hud/calibrate.py"],

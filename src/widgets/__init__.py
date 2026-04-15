@@ -8,11 +8,13 @@ Each widget module must have:
 """
 
 import os
+import json
 import importlib
 import glob
 
 _widgets = []
 _loaded = False
+CONFIG_FILE = "/home/chrismslist/car-hud/.widget-config.json"
 
 
 def _load_widgets():
@@ -35,11 +37,34 @@ def _load_widgets():
     _widgets.sort(key=lambda m: getattr(m, "priority", 50))
 
 
+def _load_config():
+    """Load widget visibility config."""
+    try:
+        with open(CONFIG_FILE) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_config(config):
+    """Save widget visibility config."""
+    try:
+        with open(CONFIG_FILE, "w") as f:
+            json.dump(config, f)
+    except Exception:
+        pass
+
+
 def get_active(hud, music):
-    """Return list of (name, module) for widgets that have content right now."""
+    """Return list of (name, module) for enabled widgets that have content."""
     _load_widgets()
+    config = _load_config()
     active = []
     for mod in _widgets:
+        wname = mod.name.lower()
+        # Check if widget is disabled in config (enabled by default)
+        if not config.get(wname, {}).get("enabled", True):
+            continue
         try:
             if mod.is_active(hud, music):
                 active.append((mod.name, mod))
@@ -49,6 +74,22 @@ def get_active(hud, music):
 
 
 def get_all():
-    """Return all loaded widget modules."""
+    """Return all loaded widget modules with their config state."""
     _load_widgets()
-    return list(_widgets)
+    config = _load_config()
+    result = []
+    for mod in _widgets:
+        wname = mod.name.lower()
+        result.append({
+            "name": mod.name,
+            "priority": getattr(mod, "priority", 50),
+            "enabled": config.get(wname, {}).get("enabled", True),
+        })
+    return result
+
+
+def set_enabled(widget_name, enabled):
+    """Enable or disable a widget by name."""
+    config = _load_config()
+    config[widget_name.lower()] = {"enabled": enabled}
+    save_config(config)

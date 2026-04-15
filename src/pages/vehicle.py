@@ -121,8 +121,8 @@ def draw(hud, obd, music):
     hud.draw_glow_text(f"H2O {cool:.0f}C", hud.font_xs, t["text_med"],
                        (cx - 55 - hud.font_xs.size(f"H2O {cool:.0f}C")[0], cy + 55))
 
-    # ── Widget strip — auto-cycles active widgets ──
-    wly = cy + 75
+    # ── Widget strip — below all gauge labels ──
+    wly = cy + 90
     pygame.draw.line(s, t["border_lite"], (10, wly), (W - 10, wly))
 
     active = widgets.get_active(hud, music)
