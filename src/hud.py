@@ -680,7 +680,7 @@ class CarHUD:
         except Exception:
             pass
         if cam_c == OFF and os.path.exists("/dev/video0"):
-            cam_c = AMBER
+            cam_c = t["primary"]  # camera present = blue
 
         modules = [("mic", ac), ("obd", oc), ("phn", phone_c),
                    ("net", nc), ("cam", cam_c)]
