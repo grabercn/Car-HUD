@@ -56,6 +56,9 @@ if [ ! -d "$STAGING_DIR/src" ]; then
     exit 1
 fi
 
+# Fix CRLF line endings from Windows commits
+find "$STAGING_DIR/src" -name "*.py" -o -name "*.sh" | xargs sed -i 's/\r$//' 2>/dev/null || true
+
 write_status "installing" "Syncing files..." 50
 
 # --- Smart file sync: only copy changed/new, remove deleted ---
