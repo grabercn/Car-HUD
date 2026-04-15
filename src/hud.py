@@ -146,25 +146,13 @@ class CarHUD:
         global _headless
 
         # Try real display first, fall back to headless
-        for driver in ["kmsdrm", "dummy"]:
-            os.environ["SDL_VIDEODRIVER"] = driver
-            try:
-                pygame.init()
-                info = pygame.display.Info()
-                self.display_w = info.current_w if info.current_w > 0 else 480
-                self.display_h = info.current_h if info.current_h > 0 else 320
-                self.screen = pygame.display.set_mode(
-                    (self.display_w, self.display_h), pygame.FULLSCREEN | pygame.NOFRAME)
-                _headless = (driver == "dummy")
-                break
-            except Exception:
-                pygame.quit()
-                continue
-
-        if _headless:
-            self.display_w = self.TARGET_W
-            self.display_h = self.TARGET_H
-            self.screen = pygame.display.set_mode((self.display_w, self.display_h))
+        # Simple init — same as working test
+        pygame.init()
+        info = pygame.display.Info()
+        self.display_w = info.current_w if info.current_w > 0 else 480
+        self.display_h = info.current_h if info.current_h > 0 else 320
+        self.screen = pygame.display.set_mode(
+            (self.display_w, self.display_h), pygame.FULLSCREEN | pygame.NOFRAME)
 
         self.width = self.TARGET_W
         self.height = self.TARGET_H
@@ -837,20 +825,7 @@ class CarHUD:
             mt = self.font_xs.render(name, True, color)
             s.blit(mt, (mx + (mw - mt.get_width()) // 2, my + 10))
 
-            if name == "PHN":
-                # Show phone name above PHN
-                try:
-                    import subprocess
-                    r = subprocess.run([bluetoothctl, info], capture_output=True, text=True, timeout=2)
-                    for line in r.stdout.split(n):
-                        if Name: in line:
-                            phone_name = line.split(Name:)[1].strip()[:8]
-                            pnt = self.font_xs.render(phone_name, True, color)
-                            s.blit(pnt, (mx + (mw - pnt.get_width()) // 2, my - 12))
-                            break
-                except Exception:
-                    pass
-            if name == NET and net_ssid:
+            if name == "NET" and net_ssid:
                 st = self.font_xs.render(net_ssid[:10].upper(), True, color)
                 s.blit(st, (mx + (mw - st.get_width()) // 2, my - 12))
 
