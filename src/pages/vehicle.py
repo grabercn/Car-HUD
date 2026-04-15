@@ -97,8 +97,8 @@ def draw(hud, obd, music):
     hud.draw_glow_text(f"{cool:.0f}C", hud.font_xs, t["text_med"],
                        (cx - 60 - hud.font_xs.size(f"{cool:.0f}C")[0], cy + 60))
 
-    # ── Widget scroll ──
-    wly = cy + 82
+    # ── Widget scroll — below CHG/BATT labels ──
+    wly = cy + 96
     widget_h = H - wly - 24
 
     active = widgets.get_active(hud, music)

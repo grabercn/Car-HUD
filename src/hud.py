@@ -29,12 +29,12 @@ from pages import vehicle as vehicle_page, system as system_page
 THEMES = {
     "blue": {  # Honda 2014 Default Blue (High Contrast)
         "primary":    (0, 200, 255),     # Vibrant cyan-blue
-        "primary_dim":(0, 90, 160),      # Dimmer cyan
+        "primary_dim":(0, 90, 160),
         "accent":     (0, 150, 240),
-        "bg":         (4, 8, 16),        # Very dark blue-black
+        "bg":         (4, 8, 16),
         "panel":      (10, 16, 32),
-        "border":     (20, 40, 80),
-        "border_lite":(15, 30, 60),
+        "border":     (30, 55, 100),     # Visible gauge tracks
+        "border_lite":(22, 42, 75),
         "text_bright":(240, 250, 255),   # Crisp white with blue tint
         "text_med":   (160, 210, 255),   # Legible light blue
         "text_dim":   (100, 150, 200),   # Muted blue
@@ -81,20 +81,20 @@ THEMES = {
         "accent":     (20, 20, 20),
         "bg":         (245, 245, 250),   # Very bright cool white
         "panel":      (230, 230, 235),
-        "border":     (180, 180, 190),
-        "border_lite":(200, 200, 210),
-        "text_bright":(10, 10, 15),      # Almost black
+        "border":     (140, 140, 155),   # Darker gauge tracks for visibility
+        "border_lite":(170, 170, 185),
+        "text_bright":(10, 10, 15),
         "text_med":   (60, 60, 70),
         "text_dim":   (100, 100, 110),
     },
     "night": {  # Honda 2014 Night Mode (Minimal glare)
-        "primary":    (0, 100, 180),     # Deepest legible blue
+        "primary":    (0, 100, 180),
         "primary_dim":(0, 50, 90),
         "accent":     (0, 80, 140),
-        "bg":         (2, 4, 6),         # Nearly pure black
+        "bg":         (2, 4, 6),
         "panel":      (5, 8, 12),
-        "border":     (10, 20, 30),
-        "border_lite":(8, 15, 25),
+        "border":     (20, 35, 55),      # Brighter gauge tracks for visibility
+        "border_lite":(15, 28, 45),
         "text_bright":(140, 180, 210),   # Dimmed white
         "text_med":   (90, 130, 160),
         "text_dim":   (60, 90, 120),
@@ -368,62 +368,81 @@ class CarHUD:
             pass
 
     def draw_glow_text(self, text, font, color, pos, glow_color=None, glow_dist=1):
-        """Draw text with subtle glow/shadow."""
-        if glow_color is None:
-            glow_color = (0, 0, 0)
-        st = font.render(text, True, glow_color)
-        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-            self.surf.blit(st, (pos[0] + dx, pos[1] + dy))
-        mt = font.render(text, True, color)
-        self.surf.blit(mt, pos)
+        """Draw text with shadow — cached for performance."""
+        if not hasattr(self, '_text_cache'):
+            self._text_cache = {}
+        key = (text, id(font), color)
+        if key not in self._text_cache:
+            if glow_color is None:
+                glow_color = (0, 0, 0)
+            mt = font.render(text, True, color)
+            w, h = mt.get_width() + 2, mt.get_height() + 2
+            surf = pygame.Surface((w, h), pygame.SRCALPHA)
+            st = font.render(text, True, glow_color)
+            for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                surf.blit(st, (1 + dx, 1 + dy))
+            surf.blit(mt, (1, 1))
+            self._text_cache[key] = surf
+            # Cap cache at 200 entries
+            if len(self._text_cache) > 200:
+                self._text_cache.clear()
+        self.surf.blit(self._text_cache[key], (pos[0] - 1, pos[1] - 1))
 
-    def draw_arc_gauge(self, cx, cy, radius, thickness, pct, color, bg_color=None, 
+    def draw_arc_gauge(self, cx, cy, radius, thickness, pct, color, bg_color=None,
                        start=math.pi, end=0, ticks=False):
         s = self.surf
         bg = bg_color or self.t["border"]
         start_angle = start
         end_angle = end
-        steps = 50
+        steps = 40
+
+        # Pre-computed line segments (cached per gauge geometry)
+        if not hasattr(self, '_arc_cache'):
+            self._arc_cache = {}
+        arc_key = (cx, cy, radius, start_angle, end_angle, steps)
+        if arc_key not in self._arc_cache:
+            segs = []
+            for i in range(steps):
+                t1 = i / steps
+                t2 = (i + 1) / steps
+                a1 = start_angle + (end_angle - start_angle) * t1
+                a2 = start_angle + (end_angle - start_angle) * t2
+                segs.append((
+                    int(cx + radius * math.cos(a1)), int(cy - radius * math.sin(a1)),
+                    int(cx + radius * math.cos(a2)), int(cy - radius * math.sin(a2))
+                ))
+            # Tick positions
+            tick_segs = []
+            if ticks:
+                for i in range(11):
+                    a = start_angle + (end_angle - start_angle) * (i / 10)
+                    tick_segs.append((
+                        int(cx + (radius - thickness//2) * math.cos(a)),
+                        int(cy - (radius - thickness//2) * math.sin(a)),
+                        int(cx + (radius + thickness//2 + 3) * math.cos(a)),
+                        int(cy - (radius + thickness//2 + 3) * math.sin(a))
+                    ))
+            self._arc_cache[arc_key] = (segs, tick_segs)
+
+        segs, tick_segs = self._arc_cache[arc_key]
 
         # Draw background track
-        for i in range(steps):
-            t = i / steps
-            a1 = start_angle + (end_angle - start_angle) * t
-            a2 = start_angle + (end_angle - start_angle) * (t + 1/steps)
-            x1 = cx + radius * math.cos(a1)
-            y1 = cy - radius * math.sin(a1)
-            x2 = cx + radius * math.cos(a2)
-            y2 = cy - radius * math.sin(a2)
-            pygame.draw.line(s, bg, (int(x1), int(y1)), (int(x2), int(y2)), thickness)
+        for x1, y1, x2, y2 in segs:
+            pygame.draw.line(s, bg, (x1, y1), (x2, y2), thickness)
 
         # Draw progress arc
         fill_steps = max(1, int(steps * min(pct, 1.0)))
         for i in range(fill_steps):
+            x1, y1, x2, y2 = segs[i]
             t = i / steps
-            t2 = (i + 1) / steps
-            # Logic for color transitions based on progress
             if pct > 0.85 and t > 0.85: c = RED
             elif pct > 0.7 and t > 0.7: c = AMBER
             else: c = color
-            
-            a1 = start_angle + (end_angle - start_angle) * t
-            a2 = start_angle + (end_angle - start_angle) * t2
-            x1 = cx + radius * math.cos(a1)
-            y1 = cy - radius * math.sin(a1)
-            x2 = cx + radius * math.cos(a2)
-            y2 = cy - radius * math.sin(a2)
-            pygame.draw.line(s, c, (int(x1), int(y1)), (int(x2), int(y2)), thickness)
+            pygame.draw.line(s, c, (x1, y1), (x2, y2), thickness)
 
         if ticks:
-            # Draw scale ticks every 10%
-            tick_len = thickness + 3
-            for i in range(11):
-                a = start_angle + (end_angle - start_angle) * (i / 10)
-                x1 = cx + (radius - thickness//2) * math.cos(a)
-                y1 = cy - (radius - thickness//2) * math.sin(a)
-                x2 = cx + (radius + thickness//2 + 3) * math.cos(a)
-                y2 = cy - (radius + thickness//2 + 3) * math.sin(a)
-                pygame.draw.line(s, self.t["border_lite"], (int(x1), int(y1)), (int(x2), int(y2)), 1)
+            for x1, y1, x2, y2 in tick_segs:
+                pygame.draw.line(s, self.t["border_lite"], (x1, y1), (x2, y2), 1)
 
     def draw_hbar(self, x, y, w, h, pct, color, label=None, value=None):
         s = self.surf
