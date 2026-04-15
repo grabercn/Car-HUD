@@ -72,7 +72,7 @@ def draw(hud, obd, music):
     ml = hud.font_sm.render("EV" if ev else "GAS", True, (0, 0, 0))
     s.blit(ml, (cx - ml.get_width() // 2, cy + 33))
 
-    lx, ly, lr = 65, 148, 70
+    lx, ly, lr = 78, 148, 65
     if ev:
         hud.draw_arc_gauge(lx, ly, lr, 10, min(throttle / 80, 1.0), GREEN,
                            start=math.pi * 1.3, end=math.pi * 0.7, ticks=True)
@@ -86,7 +86,7 @@ def draw(hud, obd, music):
     hud.draw_glow_text("PWR", hud.font_xs, t["text_dim"], (lx - 12, ly - lr - 14))
     hud.draw_glow_text("CHG", hud.font_xs, GREEN, (lx - 12, ly + lr + 4))
 
-    rx, ry, rr = W - 65, 148, 70
+    rx, ry, rr = W - 78, 148, 65
     fc = GREEN if fuel > 20 else AMBER if fuel > 10 else RED
     hud.draw_arc_gauge(rx, ry, rr, 10, fuel / 100, fc, start=math.pi * 0.3, end=-math.pi * 0.3, ticks=True)
     bc = GREEN if hv > 30 else AMBER if hv > 15 else RED
