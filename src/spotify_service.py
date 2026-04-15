@@ -192,7 +192,20 @@ def main():
 
     while True:
         try:
-            current = sp.current_playback()
+            # Try currently_playing first (faster, more reliable)
+            current = None
+            try:
+                current = sp.current_playback()
+            except Exception:
+                pass
+            if not current:
+                try:
+                    cp = sp.currently_playing()
+                    if cp:
+                        current = cp
+                        current["device"] = {"name": "Spotify", "volume_percent": 0}
+                except Exception:
+                    pass
 
             if current and current.get("is_playing"):
                 item = current.get("item", {})
@@ -236,10 +249,16 @@ def main():
                                 import shutil
                                 shutil.copy2(cache_path, ART_PATH)
                             else:
-                                # Download and cache permanently
+                                # Download and cache
                                 urllib.request.urlretrieve(url, ART_PATH)
                                 import shutil
                                 shutil.copy2(ART_PATH, cache_path)
+                                # Cap cache at 500 files
+                                cached = sorted(
+                                    [os.path.join(ART_CACHE_DIR, f) for f in os.listdir(ART_CACHE_DIR)],
+                                    key=os.path.getmtime)
+                                while len(cached) > 500:
+                                    os.remove(cached.pop(0))
                         except Exception:
                             pass
                     threading.Thread(target=_dl, args=(art_url,), daemon=True).start()

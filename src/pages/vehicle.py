@@ -1,16 +1,23 @@
-"""Vehicle page — OBD instrument cluster with music strip."""
+"""Vehicle page — OBD instrument cluster with auto-cycling widgets."""
 
 import math
+import time
 import datetime
 import pygame
+import widgets
 
 GREEN = (0, 180, 85)
 AMBER = (220, 160, 0)
 RED = (220, 45, 45)
 
+_widget_cycle_time = 0
+_widget_cycle_idx = 0
+
 
 def draw(hud, obd, music):
     """Draw the vehicle instrument cluster page."""
+    global _widget_cycle_time, _widget_cycle_idx
+
     W, H = hud.width, hud.height
     s = hud.surf
     t = hud.t
@@ -29,7 +36,7 @@ def draw(hud, obd, music):
     intake = vd.get("INTAKE_TEMP", 0)
     ev = rpm < 100
 
-    # Warnings and DTCs (at the very top)
+    # Warnings and DTCs
     wy = 0
     all_warnings = (obd.get("warnings") or [])[:]
     for dtc in (obd.get("dtcs") or []):
@@ -47,13 +54,11 @@ def draw(hud, obd, music):
     hud.draw_arc_gauge(cx, cy, r_speed, 14, sp_pct, t["primary"],
                        start=math.pi * 1.15, end=-math.pi * 0.15, ticks=True)
 
-    # RPM as thin inner ring
     rpm_pct = min(rpm / 7000, 1.0)
     rc = t["primary_dim"] if rpm < 3000 else AMBER if rpm < 5500 else RED
     hud.draw_arc_gauge(cx, cy, r_speed - 18, 4, rpm_pct, rc,
                        start=math.pi * 1.15, end=-math.pi * 0.15)
 
-    # Speed Digits
     sp_str = f"{int(speed)}"
     sp_pos = (cx - hud.font_xxl.size(sp_str)[0] // 2, cy - 65)
     hud.draw_glow_text(sp_str, hud.font_xxl, t["text_bright"], sp_pos)
@@ -62,7 +67,7 @@ def draw(hud, obd, music):
     unit_pos = (cx - hud.font_md.size(unit_str)[0] // 2, cy - 2)
     hud.draw_glow_text(unit_str, hud.font_md, t["text_dim"], unit_pos)
 
-    # EV/GAS status badge
+    # EV/GAS badge
     mc = GREEN if ev else t["primary"]
     badge_w, badge_h = 56, 22
     pygame.draw.rect(s, (0, 0, 0, 100),
@@ -103,20 +108,33 @@ def draw(hud, obd, music):
     hud.draw_glow_text("FUEL", hud.font_xs, t["text_dim"], (rx - 15, ry - rr - 14))
     hud.draw_glow_text("BATT", hud.font_xs, t["text_dim"], (rx - 15, ry + rr + 4))
 
-    # ── Top strip info ──
+    # ── Top strip ──
     ty = 6 + wy
     hud.draw_glow_text(now.strftime("%I:%M"), hud.font_md, t["text_bright"], (12, ty))
     vl_str = f"{volts:.1f}V"
     hud.draw_glow_text(vl_str, hud.font_md, t["text_med"],
                        (W - hud.font_md.size(vl_str)[0] - 12, ty))
 
-    # ── Lower Data (between clusters) ──
+    # ── Lower Data ──
     hud.draw_glow_text(f"AIR {intake:.0f}C", hud.font_xs, t["text_dim"],
                        (cx + 55, cy + 55))
     hud.draw_glow_text(f"H2O {cool:.0f}C", hud.font_xs, t["text_med"],
                        (cx - 55 - hud.font_xs.size(f"H2O {cool:.0f}C")[0], cy + 55))
 
-    # ── Music strip — just below gauge labels ──
-    ly = cy + 75
-    pygame.draw.line(s, t["border_lite"], (10, ly), (W - 10, ly))
-    hud.draw_lower_section(ly + 2, music, vd)
+    # ── Widget strip — auto-cycles active widgets ──
+    wly = cy + 75
+    pygame.draw.line(s, t["border_lite"], (10, wly), (W - 10, wly))
+
+    active = widgets.get_active(hud, music)
+    if active:
+        now_t = time.time()
+        if now_t - _widget_cycle_time > 5:
+            _widget_cycle_time = now_t
+            _widget_cycle_idx = (_widget_cycle_idx + 1) % len(active)
+        if _widget_cycle_idx >= len(active):
+            _widget_cycle_idx = 0
+        wname, mod = active[_widget_cycle_idx]
+        try:
+            mod.draw(hud, 4, wly + 2, W - 8, H - wly - 30, music)
+        except Exception:
+            pass
