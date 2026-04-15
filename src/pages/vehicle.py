@@ -14,7 +14,7 @@ _view_idx = 0
 _view_start = 0
 _anim_t = 0.0
 _anim_start = 0
-_ANIM_SECS = 0.35
+_ANIM_SECS = 0.5
 
 
 def draw(hud, obd, music):

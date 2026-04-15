@@ -542,7 +542,8 @@ class CarHUD:
         W, H = self.width, self.height
         s = self.surf
         t = self.t
-        
+        now_t = time.time()
+
         # Minimalist compact status pill
         sy = H - 30
 
@@ -581,20 +582,24 @@ class CarHUD:
         else:
             oc = OFF
 
-        # PHN — primary=connected, amber=BT on, off=BT off
+        # PHN — cached, checked every 5 seconds (bluetoothctl is SLOW)
         music = self.get_music_data()
-        phone_c = OFF
-        try:
-            import subprocess as _sp
-            bt_info = _sp.run(["bluetoothctl", "info"], capture_output=True, text=True, timeout=3)
-            if "Connected: yes" in bt_info.stdout:
-                phone_c = t["primary"]
-            else:
-                bt_state = _sp.run(["bluetoothctl", "show"], capture_output=True, text=True, timeout=3)
-                if "Powered: yes" in bt_state.stdout:
-                    phone_c = AMBER
-        except Exception:
-            pass
+        if not hasattr(self, '_bt_cache_time'):
+            self._bt_cache_time = 0
+            self._bt_state = "off"
+        if now_t - self._bt_cache_time > 5:
+            self._bt_cache_time = now_t
+            try:
+                import subprocess as _sp
+                bt_info = _sp.run(["bluetoothctl", "info"], capture_output=True, text=True, timeout=2)
+                if "Connected: yes" in bt_info.stdout:
+                    self._bt_state = "connected"
+                else:
+                    bt_state = _sp.run(["bluetoothctl", "show"], capture_output=True, text=True, timeout=2)
+                    self._bt_state = "on" if "Powered: yes" in bt_state.stdout else "off"
+            except Exception:
+                pass
+        phone_c = t["primary"] if self._bt_state == "connected" else AMBER if self._bt_state == "on" else OFF
 
         # NET — primary=connected, amber=connecting, off=down
         nc = OFF
@@ -1293,12 +1298,12 @@ class CarHUD:
                         elif vsig.get("action") == "show" and vsig.get("target") == "help":
                             self.draw_help_overlay()
                             self.present()
-                            self.clock_t.tick(60)
+                            self.clock_t.tick(30)
                             continue
                         elif vsig.get("action") == "show" and vsig.get("target") == "keys":
                             self.draw_keys_overlay()
                             self.present()
-                            self.clock_t.tick(60)
+                            self.clock_t.tick(30)
                             continue
                         elif vsig.get("action") == "widget":
                             # Voice widget control: "show/hide <name> widget"
@@ -1376,7 +1381,7 @@ class CarHUD:
                 self.draw_terminal_overlay()
 
             self.present()
-            self.clock_t.tick(60)
+            self.clock_t.tick(30)
 
         pygame.quit()
 

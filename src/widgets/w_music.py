@@ -10,6 +10,9 @@ view_time = 12  # seconds — user needs time to read track info
 
 _last_track = ""
 _track_change_time = 0
+_art_cache = None       # cached pygame.Surface
+_art_cache_mtime = 0    # file mtime when cached
+_art_cache_size = 0     # size it was rendered at
 
 
 def is_active(hud, music):
@@ -33,18 +36,23 @@ def draw(hud, x, y, w, h, music):
     track = music.get("track", "")
     artist = music.get("artist", "")
 
-    # Album art — square, vertically centered
+    # Album art — cached to avoid PIL decode every frame
+    global _art_cache, _art_cache_mtime, _art_cache_size
     art_size = min(h - 4, w // 4)
     art_y = y + (h - art_size) // 2
     art_loaded = False
+    art_file = "/home/chrismslist/car-hud/current_art.jpg"
     try:
-        art_file = "/home/chrismslist/car-hud/current_art.jpg"
         if os.path.exists(art_file) and os.path.getsize(art_file) > 100:
-            from PIL import Image as PILImage
-            pil = PILImage.open(art_file).convert("RGB")
-            pil = pil.resize((art_size, art_size), PILImage.LANCZOS)
-            art_surf = pygame.image.fromstring(pil.tobytes(), (art_size, art_size), "RGB")
-            s.blit(art_surf, (x, art_y))
+            mt = os.path.getmtime(art_file)
+            if _art_cache is None or mt != _art_cache_mtime or art_size != _art_cache_size:
+                from PIL import Image as PILImage
+                pil = PILImage.open(art_file).convert("RGB")
+                pil = pil.resize((art_size, art_size), PILImage.LANCZOS)
+                _art_cache = pygame.image.fromstring(pil.tobytes(), (art_size, art_size), "RGB")
+                _art_cache_mtime = mt
+                _art_cache_size = art_size
+            s.blit(_art_cache, (x, art_y))
             art_loaded = True
     except Exception:
         pass

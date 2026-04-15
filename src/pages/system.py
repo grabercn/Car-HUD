@@ -13,7 +13,7 @@ _view_idx = 0        # which pair is currently showing (0-based)
 _view_start = 0      # when this pair started showing
 _anim_t = 0.0        # 0.0 = resting, >0 = animating (0→1 over ANIM_SECS)
 _anim_start = 0
-_ANIM_SECS = 0.4
+_ANIM_SECS = 0.6
 
 
 def draw(hud, stats, music):
