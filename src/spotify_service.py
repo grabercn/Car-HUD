@@ -236,16 +236,10 @@ def main():
                                 import shutil
                                 shutil.copy2(cache_path, ART_PATH)
                             else:
-                                # Download and cache
+                                # Download and cache permanently
                                 urllib.request.urlretrieve(url, ART_PATH)
                                 import shutil
                                 shutil.copy2(ART_PATH, cache_path)
-                                # Keep cache under 50 files
-                                cached = sorted(
-                                    [os.path.join(ART_CACHE_DIR, f) for f in os.listdir(ART_CACHE_DIR)],
-                                    key=os.path.getmtime)
-                                while len(cached) > 50:
-                                    os.remove(cached.pop(0))
                         except Exception:
                             pass
                     threading.Thread(target=_dl, args=(art_url,), daemon=True).start()
