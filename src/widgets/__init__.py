@@ -19,6 +19,7 @@ _online = False
 _online_check_time = 0
 _active_cache = []
 _active_cache_time = 0
+_last_shown = {}  # widget name → last time it was displayed
 
 _widgets = []
 _loaded = False
@@ -93,6 +94,15 @@ def get_active(hud, music):
             continue
         if getattr(mod, "requires_online", False) and not online:
             continue
+        # Respect show_every — skip if shown too recently (unless urgency is high)
+        show_every = getattr(mod, "show_every", 0)
+        if show_every > 0 and wname in _last_shown:
+            elapsed = now - _last_shown[wname]
+            if elapsed < show_every:
+                # Check if urgency overrides the cooldown
+                urg = mod.urgency(hud, music) if hasattr(mod, "urgency") else 0
+                if urg >= 0:  # no urgent event, skip
+                    continue
         try:
             if mod.is_active(hud, music):
                 urg = 0
@@ -100,6 +110,7 @@ def get_active(hud, music):
                     urg = mod.urgency(hud, music)
                 eff = getattr(mod, "priority", 50) + urg
                 active.append((eff, mod.name, mod))
+                _last_shown[wname] = now
         except Exception:
             pass
 

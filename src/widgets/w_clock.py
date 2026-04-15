@@ -5,7 +5,8 @@ import pygame
 
 name = "System"
 priority = 99
-view_time = 5  # seconds — quick info
+view_time = 4  # quick glance — doesn't change fast
+show_every = 120  # only show once every 2 minutes — quick info
 
 
 def is_active(hud, music):

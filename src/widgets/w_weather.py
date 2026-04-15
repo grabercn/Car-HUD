@@ -7,22 +7,22 @@ import pygame
 
 name = "Weather"
 priority = 25
-view_time = 8
+view_time = 6
 requires_online = True
+show_every = 180  # show once every 3 minutes — data doesn't change fast
 
 _data = {"temp": "", "desc": "", "icon": "", "city": "", "last_fetch": 0, "ok": False}
 _fetching = False
 
 
 def _fetch_weather():
-    """Background fetch weather from wttr.in (uses IP geolocation)."""
+    """Fetch weather from wttr.in (uses IP geolocation)."""
     global _fetching
     if _fetching:
         return
     _fetching = True
     try:
         import urllib.request
-        # wttr.in returns JSON weather based on IP geolocation
         req = urllib.request.Request(
             "https://wttr.in/?format=j1",
             headers={"User-Agent": "Car-HUD/1.0"})
@@ -40,16 +40,26 @@ def _fetch_weather():
         _data["region"] = area.get("region", [{}])[0].get("value", "")
         _data["ok"] = True
         _data["last_fetch"] = time.time()
-    except Exception:
-        pass
+    except Exception as e:
+        # Write error so we can debug
+        try:
+            with open("/tmp/car-hud-weather-error", "w") as f:
+                f.write(str(e))
+        except:
+            pass
     _fetching = False
 
 
 def is_active(hud, music):
-    # First fetch is synchronous (blocks ~1s) so widget shows immediately
+    # Trigger fetch if needed
     if _data["last_fetch"] == 0:
+        # First time — try synchronous, fall back to background
         _fetch_weather()
-    elif time.time() - _data["last_fetch"] > 900:
+        if not _data["ok"]:
+            # Mark as attempted so we don't block every frame
+            _data["last_fetch"] = time.time()
+    elif time.time() - _data["last_fetch"] > 300:
+        # Refresh every 5 min in background
         threading.Thread(target=_fetch_weather, daemon=True).start()
     return _data["ok"]
 
@@ -63,7 +73,11 @@ def draw(hud, x, y, w, h, music):
     t = hud.t
 
     if not _data["ok"]:
-        return False
+        # Show loading state instead of blank
+        pygame.draw.rect(s, t["panel"], (x, y, w, h), border_radius=6)
+        lt = hud.font_sm.render("Loading weather...", True, t["text_dim"])
+        s.blit(lt, (x + w // 2 - lt.get_width() // 2, y + h // 2 - 6))
+        return True
 
     pygame.draw.rect(s, t["panel"], (x, y, w, h), border_radius=6)
 
@@ -75,39 +89,33 @@ def draw(hud, x, y, w, h, music):
 
     cy = y + h // 2
 
-    # Weather icon (simple) — sun, cloud, rain based on description
+    # Weather icon — simple shapes, no border_radius on ellipse
+    import math
     ix, iy = x + 20, cy
     dl = desc.lower()
     if "sun" in dl or "clear" in dl:
-        # Sun icon
         pygame.draw.circle(s, (255, 200, 50), (ix, iy), 8)
         for angle_deg in range(0, 360, 45):
-            import math
             rad = math.radians(angle_deg)
             pygame.draw.line(s, (255, 200, 50),
                              (ix + int(10 * math.cos(rad)), iy + int(10 * math.sin(rad))),
                              (ix + int(14 * math.cos(rad)), iy + int(14 * math.sin(rad))), 2)
-    elif "cloud" in dl or "overcast" in dl:
-        # Cloud icon
-        pygame.draw.ellipse(s, t["text_med"], (ix - 10, iy - 6, 20, 12), border_radius=6)
-        pygame.draw.ellipse(s, t["text_med"], (ix - 5, iy - 10, 14, 10), border_radius=5)
+    elif "cloud" in dl or "overcast" in dl or "partly" in dl:
+        pygame.draw.ellipse(s, t["text_med"], (ix - 10, iy - 6, 20, 12))
+        pygame.draw.ellipse(s, t["text_med"], (ix - 5, iy - 10, 14, 10))
     elif "rain" in dl or "drizzle" in dl:
-        # Cloud + rain drops
-        pygame.draw.ellipse(s, t["text_med"], (ix - 10, iy - 8, 20, 10), border_radius=6)
+        pygame.draw.ellipse(s, t["text_med"], (ix - 10, iy - 8, 20, 10))
         for dx in [-4, 0, 4]:
             pygame.draw.line(s, t["primary"], (ix + dx, iy + 4), (ix + dx - 1, iy + 9), 2)
     elif "snow" in dl:
-        # Snowflake
         for angle_deg in [0, 60, 120]:
-            import math
             rad = math.radians(angle_deg)
             pygame.draw.line(s, (200, 220, 255),
                              (ix - int(8 * math.cos(rad)), iy - int(8 * math.sin(rad))),
                              (ix + int(8 * math.cos(rad)), iy + int(8 * math.sin(rad))), 2)
     else:
-        # Default — partly cloudy
         pygame.draw.circle(s, (255, 200, 50), (ix - 3, iy - 4), 6)
-        pygame.draw.ellipse(s, t["text_med"], (ix - 6, iy - 2, 16, 10), border_radius=5)
+        pygame.draw.ellipse(s, t["text_med"], (ix - 6, iy - 2, 16, 10))
 
     # Temperature — big and bold
     tx = x + 42
