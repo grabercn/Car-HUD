@@ -26,7 +26,7 @@ LOG_FILE = "/tmp/car-hud-spotify.log"
 
 SCOPES = "user-read-playback-state user-modify-playback-state user-read-currently-playing"
 REDIRECT_URI = "http://127.0.0.1:8888/callback"
-ART_PATH = "/tmp/car-hud-album-art.jpg"
+ART_PATH = "/home/chrismslist/car-hud/current_art.jpg"
 ART_CACHE_DIR = os.path.join(INSTALL_DIR, "art_cache")
 
 import threading
@@ -117,7 +117,7 @@ def get_spotify():
 
         token_info = auth.get_cached_token()
 
-    sp = spotipy.Spotify(auth_manager=auth)
+    sp = spotipy.Spotify(auth_manager=auth, requests_timeout=10)
     log("Spotify authenticated!")
     return sp
 
@@ -182,6 +182,9 @@ def main():
         time.sleep(60)
         return
 
+    # Get auth manager reference for token refresh
+    auth = sp.auth_manager
+
     write_music({"playing": False, "status": "Connected to Spotify"})
     log("Polling now-playing...")
 
@@ -222,7 +225,6 @@ def main():
                 })
 
                 # Download album art — check cache first
-                global _last_art_url
                 if art_url and art_url != _last_art_url[0]:
                     _last_art_url[0] = art_url
                     def _dl(url):
@@ -254,11 +256,22 @@ def main():
                 })
 
         except Exception as e:
-            log(f"Poll error: {e}")
-            write_music({"playing": False, "status": f"Error: {str(e)[:50]}"})
-            # Re-auth if token expired
-            if "token" in str(e).lower() or "401" in str(e):
-                sp = get_spotify()
+            err_str = str(e)
+            if "401" in err_str or "token" in err_str.lower():
+                # Token expired — force refresh
+                try:
+                    token = auth.get_cached_token()
+                    if token and token.get("refresh_token"):
+                        auth.refresh_access_token(token["refresh_token"])
+                        log("Token refreshed")
+                except Exception:
+                    log(f"Refresh failed: {e}")
+            elif "timeout" in err_str.lower() or "resolve" in err_str.lower():
+                # Network issue — just wait
+                time.sleep(5)
+            else:
+                log(f"Poll error: {e}")
+                write_music({"playing": False, "status": "Reconnecting..."})
 
         # Check voice commands
         now = time.time()
@@ -266,7 +279,7 @@ def main():
             last_voice_check = now
             check_voice_commands(sp)
 
-        time.sleep(2)  # Poll every 2 seconds
+        time.sleep(3)  # Poll every 3 seconds
 
 
 if __name__ == "__main__":

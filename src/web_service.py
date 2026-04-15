@@ -470,7 +470,7 @@ a{{color:#0af}}
             ssid = params.get("ssid", [""])[0]
             pw = params.get("password", [""])[0]
             import subprocess
-            cmd = ["nmcli", "dev", "wifi", "connect", ssid]
+            cmd = ["sudo", "nmcli", "dev", "wifi", "connect", ssid]
             if pw:
                 cmd += ["password", pw]
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)

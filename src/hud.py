@@ -188,6 +188,18 @@ class CarHUD:
         self.font_xs   = pygame.font.Font(reg, 11)
         self.font_mono = pygame.font.Font(dv_mono, 10)
 
+        # CJK font for Japanese/Korean/Chinese text
+        cjk_paths = [
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-DemiLight.ttc",
+        ]
+        self.font_cjk = None
+        for cp in cjk_paths:
+            if os.path.exists(cp):
+                self.font_cjk = pygame.font.Font(cp, 13)
+                self.font_cjk_sm = pygame.font.Font(cp, 11)
+                break
+
         self.clock_t = pygame.time.Clock()
         self.running = True
         self.show_terminal = False
@@ -626,10 +638,10 @@ class CarHUD:
 
             # Album art (left side)
             art_x = 4
-            art_size = 32
+            art_size = 42
             art_loaded = False
             try:
-                art_file = "/tmp/car-hud-album-art.jpg"
+                art_file = "/home/chrismslist/car-hud/current_art.jpg"
                 if os.path.exists(art_file) and time.time() - os.path.getmtime(art_file) < 300:
                     from PIL import Image as PILImage
                     pil = PILImage.open(art_file).convert("RGB")
@@ -651,10 +663,15 @@ class CarHUD:
             tw = W - tx - 4
             max_c = tw // 6
 
-            tt = self.font_sm.render(track[:max_c], True, t["text_bright"])
+            # Use CJK font if text contains non-ASCII
+            has_cjk = any(ord(c) > 0x2E80 for c in track)
+            track_font = self.font_cjk if has_cjk and self.font_cjk else self.font_sm
+            tt = track_font.render(track[:max_c], True, t["text_bright"])
             s.blit(tt, (tx, y + 1))
 
-            at = self.font_xs.render(artist[:max_c], True, t["text_med"])
+            has_cjk_a = any(ord(c) > 0x2E80 for c in artist)
+            artist_font = self.font_cjk_sm if has_cjk_a and hasattr(self, "font_cjk_sm") and self.font_cjk_sm else self.font_xs
+            at = artist_font.render(artist[:max_c], True, t["text_med"])
             s.blit(at, (tx, y + 14))
 
             # Device source
@@ -820,7 +837,20 @@ class CarHUD:
             mt = self.font_xs.render(name, True, color)
             s.blit(mt, (mx + (mw - mt.get_width()) // 2, my + 10))
 
-            if name == "NET" and net_ssid:
+            if name == "PHN":
+                # Show phone name above PHN
+                try:
+                    import subprocess
+                    r = subprocess.run([bluetoothctl, info], capture_output=True, text=True, timeout=2)
+                    for line in r.stdout.split(n):
+                        if Name: in line:
+                            phone_name = line.split(Name:)[1].strip()[:8]
+                            pnt = self.font_xs.render(phone_name, True, color)
+                            s.blit(pnt, (mx + (mw - pnt.get_width()) // 2, my - 12))
+                            break
+                except Exception:
+                    pass
+            if name == NET and net_ssid:
                 st = self.font_xs.render(net_ssid[:10].upper(), True, color)
                 s.blit(st, (mx + (mw - st.get_width()) // 2, my - 12))
 
