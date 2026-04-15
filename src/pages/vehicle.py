@@ -12,13 +12,13 @@ RED = (220, 45, 45)
 
 _widget_cycle_time = 0
 _widget_cycle_idx = 0
-_fade_frame = 0
-_FADE_FRAMES = 15
+_slide_frame = 0
+_SLIDE_FRAMES = 4
 
 
 def draw(hud, obd, music):
     """Draw the vehicle instrument cluster page."""
-    global _widget_cycle_time, _widget_cycle_idx, _fade_frame
+    global _widget_cycle_time, _widget_cycle_idx, _slide_frame
 
     W, H = hud.width, hud.height
     s = hud.surf
@@ -133,25 +133,16 @@ def draw(hud, obd, music):
         if now_t - _widget_cycle_time > 6:
             _widget_cycle_time = now_t
             _widget_cycle_idx = (_widget_cycle_idx + 1) % len(active)
-            _fade_frame = _FADE_FRAMES
+            _slide_frame = _SLIDE_FRAMES
         if _widget_cycle_idx >= len(active):
             _widget_cycle_idx = 0
-        if _fade_frame > 0:
-            _fade_frame -= 1
+        if _slide_frame > 0:
+            _slide_frame -= 1
+
+        slide_y = int(10 * (_slide_frame / _SLIDE_FRAMES)) if _slide_frame > 0 else 0
 
         wname, mod = active[_widget_cycle_idx]
         try:
-            # Render to temp surface for fade
-            ws = pygame.Surface((W - 12, widget_h), pygame.SRCALPHA)
-            old_surf = hud.surf
-            hud.surf = ws
-            mod.draw(hud, 0, 0, W - 12, widget_h, music)
-            hud.surf = old_surf
-
-            if _fade_frame > 0:
-                t_pct = 1 - _fade_frame / _FADE_FRAMES
-                eased = t_pct * t_pct * (3 - 2 * t_pct)  # smoothstep
-                ws.set_alpha(int(255 * eased))
-            s.blit(ws, (6, wly))
+            mod.draw(hud, 6, wly + slide_y, W - 12, widget_h, music)
         except Exception:
-            hud.surf = old_surf if 'old_surf' in dir() else s
+            pass

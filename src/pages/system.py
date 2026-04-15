@@ -11,12 +11,12 @@ RED = (220, 45, 45)
 
 _rotate_time = 0
 _rotate_offset = 0
-_fade_frame = 0  # 0=no fade, >0 fading in
-_FADE_FRAMES = 15
+_slide_frame = 0
+_SLIDE_FRAMES = 4  # ~130ms at 30fps — quick snap
 
 
 def draw(hud, stats, music):
-    global _rotate_time, _rotate_offset, _fade_frame
+    global _rotate_time, _rotate_offset, _slide_frame
 
     W, H = hud.width, hud.height
     s = hud.surf
@@ -59,42 +59,30 @@ def draw(hud, stats, music):
             s.blit(logo, ((W - logo.get_width()) // 2, wy + (avail_h - target_h) // 2))
         return
 
-    # Auto-rotate: shift visible window every 8 seconds, with fade
+    # Auto-rotate every 8 seconds with quick slide-up
     now_t = time.time()
     if now_t - _rotate_time > 8:
         _rotate_time = now_t
         _rotate_offset += 1
-        _fade_frame = _FADE_FRAMES  # trigger fade-in
+        _slide_frame = _SLIDE_FRAMES
 
-    if _fade_frame > 0:
-        _fade_frame -= 1
+    if _slide_frame > 0:
+        _slide_frame -= 1
 
-    # Show up to 2 widgets from the rotating window
+    # Slide offset: starts at 12px, snaps to 0 quickly
+    slide_y = int(12 * (_slide_frame / _SLIDE_FRAMES)) if _slide_frame > 0 else 0
+
+    # Show up to 2 widgets stacked
     max_show = min(2, len(active))
     widget_h = (avail_h - (max_show - 1) * 3) // max_show
-
-    # Render widgets to a temp surface for fade effect
-    widget_surf = pygame.Surface((W - 12, avail_h), pygame.SRCALPHA)
     shown = 0
 
     for j in range(max_show):
         idx = (_rotate_offset + j) % len(active)
         wname, mod = active[idx]
-        widget_y = j * (widget_h + 3)
+        widget_y = wy + j * (widget_h + 3) + slide_y
         try:
-            # Temporarily redirect drawing to widget surface
-            old_surf = hud.surf
-            hud.surf = widget_surf
-            if mod.draw(hud, 0, widget_y, W - 12, widget_h, music):
+            if mod.draw(hud, 6, widget_y, W - 12, widget_h, music):
                 shown += 1
-            hud.surf = old_surf
         except Exception:
-            hud.surf = old_surf
-
-    # Apply smooth ease-in fade
-    if _fade_frame > 0:
-        t_pct = 1 - _fade_frame / _FADE_FRAMES  # 0→1
-        eased = t_pct * t_pct * (3 - 2 * t_pct)  # smoothstep
-        widget_surf.set_alpha(int(255 * eased))
-
-    s.blit(widget_surf, (6, wy))
+            pass
