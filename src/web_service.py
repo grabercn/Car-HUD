@@ -39,6 +39,7 @@ input:focus,select:focus{outline:none;border-color:var(--accent)}
 <a href="/camera">Camera</a>
 <a href="/dashcam">Recordings</a>
 <a href="/settings" class="active">Settings</a>
+<a href="/terminal">Terminal</a>
 </nav>
 
 <h2>WiFi</h2>
@@ -164,10 +165,81 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from urllib.parse import unquote
 
+import pty
+import select
+import fcntl
+import struct
+import termios
+
 PORT = 8080
 SCREENSHOT_PATH = "/dev/shm/car-hud-screenshot.bmp"
 DASHCAM_DIR = "/home/chrismslist/car-hud/dashcam"
 DASHCAM_STATUS = "/tmp/car-hud-dashcam-data"
+
+# ── Terminal PTY ──
+_term_fd = None
+_term_pid = None
+_term_buf = ""
+_term_lock = threading.Lock()
+
+def _terminal_ensure():
+    """Start a bash PTY if not running."""
+    global _term_fd, _term_pid
+    if _term_fd is not None:
+        # Check if still alive
+        try:
+            os.waitpid(_term_pid, os.WNOHANG)
+        except ChildProcessError:
+            _term_fd = None
+            _term_pid = None
+    if _term_fd is None:
+        pid, fd = pty.fork()
+        if pid == 0:
+            # Child — exec bash
+            os.execvp("bash", ["bash", "--login"])
+        else:
+            _term_pid = pid
+            _term_fd = fd
+            # Set non-blocking
+            fl = fcntl.fcntl(fd, fcntl.F_GETFL)
+            fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
+            # Set terminal size
+            winsize = struct.pack("HHHH", 30, 100, 0, 0)
+            fcntl.ioctl(fd, termios.TIOCSWINSZ, winsize)
+
+def _terminal_read():
+    """Read available output from PTY."""
+    global _term_buf
+    _terminal_ensure()
+    if _term_fd is None:
+        return ""
+    with _term_lock:
+        try:
+            while True:
+                r, _, _ = select.select([_term_fd], [], [], 0)
+                if not r:
+                    break
+                data = os.read(_term_fd, 4096)
+                if not data:
+                    break
+                _term_buf += data.decode("utf-8", errors="replace")
+        except (OSError, IOError):
+            pass
+        # Keep last 8KB
+        if len(_term_buf) > 8192:
+            _term_buf = _term_buf[-8192:]
+        return _term_buf
+
+def _terminal_write(text):
+    """Write input to PTY."""
+    _terminal_ensure()
+    if _term_fd is None:
+        return
+    with _term_lock:
+        try:
+            os.write(_term_fd, text.encode())
+        except (OSError, IOError):
+            pass
 
 # Reference counting for active camera streams
 STREAM_COUNT = 0
@@ -240,6 +312,10 @@ class Handler(BaseHTTPRequestHandler):
             self.serve_dashcam_page()
         elif path.startswith("/dashcam/video/"):
             self.serve_dashcam_video(path)
+        elif path == "/terminal":
+            self.serve_terminal_page()
+        elif path == "/api/terminal/read":
+            self.api_terminal_read()
         elif path.startswith("/screenshot"):
             self.serve_screenshot()
         elif path.startswith("/key/"):
@@ -283,6 +359,7 @@ nav a:hover,nav a.active{opacity:1}
 <a href="/camera">Camera</a>
 <a href="/dashcam">Recordings</a>
 <a href="/settings">Settings</a>
+<a href="/terminal">Terminal</a>
 </nav>
 <div class="view" style="padding-top:36px"><img id="hud" src="/stream"></div>
 <script>
@@ -334,6 +411,7 @@ nav a{{color:#0af;text-decoration:none}}
 <a href="/">HUD</a>
 <a href="/camera">Cameras</a>
 <a href="/dashcam">Recordings</a>\n<a href="/settings">Settings</a>
+<a href="/terminal">Terminal</a>
 </nav>
 <div class="rec">&#9679; LIVE</div>
 <div class="view">{cam_html}</div>
@@ -408,6 +486,7 @@ a{{color:#0af}}
 <a href="/">HUD</a>
 <a href="/camera">Cameras</a>
 <a href="/dashcam">Recordings</a>\n<a href="/settings">Settings</a>
+<a href="/terminal">Terminal</a>
 </nav>
 
 <h2 class="saved-hdr">Saved Clips</h2>
@@ -622,6 +701,12 @@ a{{color:#0af}}
         import urllib.parse
         params = urllib.parse.parse_qs(body)
 
+        if path == "/api/terminal/write":
+            cmd = params.get("cmd", [""])[0]
+            _terminal_write(cmd)
+            self._json_response({"ok": True})
+            return
+
         if path == "/api/wifi/connect":
             ssid = params.get("ssid", [""])[0]
             pw = params.get("password", [""])[0]
@@ -685,6 +770,102 @@ a{{color:#0af}}
         self.send_header("Content-Type", "text/html")
         self.end_headers()
         self.wfile.write(SETTINGS_HTML.encode())
+
+    def serve_terminal_page(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html")
+        self.end_headers()
+        self.wfile.write(b"""<!DOCTYPE html>
+<html><head><title>Car-HUD Terminal</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--bg:#0b0d14;--card:#12151e;--border:#1e2235;--accent:#0af;--green:#2dcc70}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:#d0d8e8;font-family:monospace;display:flex;flex-direction:column;height:100vh}
+nav{background:rgba(11,13,20,0.95);backdrop-filter:blur(10px);padding:10px 14px;display:flex;gap:20px;border-bottom:1px solid var(--border);flex-shrink:0}
+nav a{color:var(--accent);text-decoration:none;font:600 13px system-ui;opacity:0.7;transition:opacity 0.2s}
+nav a:hover,nav a.active{opacity:1}
+#term{flex:1;background:#000;padding:10px;overflow-y:auto;white-space:pre-wrap;word-wrap:break-word;font-size:13px;line-height:1.4;color:#c8d0e0}
+#term .prompt{color:var(--green)}
+#term .err{color:#e74c3c}
+.input-bar{display:flex;gap:0;border-top:1px solid var(--border);flex-shrink:0}
+.input-bar input{flex:1;background:#0a0c14;border:none;color:#fff;padding:12px 14px;font:14px monospace;outline:none}
+.input-bar button{background:var(--accent);color:#000;border:none;padding:12px 18px;font:600 13px system-ui;cursor:pointer}
+.input-bar button:hover{background:#3cf}
+.toolbar{display:flex;gap:6px;padding:6px 10px;background:#0a0c12;border-top:1px solid var(--border);flex-shrink:0}
+.toolbar button{background:#1a1d28;color:#888;border:1px solid var(--border);padding:4px 10px;border-radius:4px;font:11px monospace;cursor:pointer}
+.toolbar button:hover{color:#fff;border-color:#444}
+</style></head><body>
+<nav>
+<a href="/">HUD</a>
+<a href="/camera">Camera</a>
+<a href="/dashcam">Recordings</a>
+<a href="/settings">Settings</a>
+<a href="/terminal" class="active">Terminal</a>
+</nav>
+<div id="term"></div>
+<div class="toolbar">
+<button onclick="send('sudo systemctl restart car-hud\\n')">Restart HUD</button>
+<button onclick="send('sudo systemctl status car-hud\\n')">HUD Status</button>
+<button onclick="send('journalctl -u car-hud --no-pager -n 20\\n')">HUD Logs</button>
+<button onclick="send('df -h / | tail -1\\n')">Disk</button>
+<button onclick="send('free -h | head -2\\n')">Memory</button>
+<button onclick="send('\\x03')">Ctrl+C</button>
+<button onclick="send('clear\\n')">Clear</button>
+</div>
+<div class="input-bar">
+<input id="cmd" placeholder="Type command..." autofocus>
+<button onclick="exec()">Run</button>
+</div>
+<script>
+const term=document.getElementById('term');
+const inp=document.getElementById('cmd');
+let lastLen=0;
+
+function send(t){
+fetch('/api/terminal/write',{method:'POST',body:'cmd='+encodeURIComponent(t)});
+}
+
+function exec(){
+const c=inp.value;
+if(!c)return;
+send(c+'\\n');
+inp.value='';
+inp.focus();
+}
+
+inp.addEventListener('keydown',e=>{
+if(e.key==='Enter')exec();
+else if(e.key==='Tab'){e.preventDefault();send('\\t')}
+else if(e.key==='ArrowUp'){e.preventDefault();send('\\x1b[A')}
+else if(e.key==='ArrowDown'){e.preventDefault();send('\\x1b[B')}
+else if(e.key==='c'&&e.ctrlKey){e.preventDefault();send('\\x03')}
+else if(e.key==='d'&&e.ctrlKey){e.preventDefault();send('\\x04')}
+else if(e.key==='l'&&e.ctrlKey){e.preventDefault();send('\\x0c')}
+});
+
+async function poll(){
+try{
+const r=await fetch('/api/terminal/read');
+const d=await r.json();
+if(d.output&&d.output.length!==lastLen){
+lastLen=d.output.length;
+// Basic ANSI strip for display
+let txt=d.output.replace(/\\x1b\\[[0-9;]*[a-zA-Z]/g,'');
+term.textContent=txt;
+term.scrollTop=term.scrollHeight;
+}
+}catch(e){}
+}
+
+setInterval(poll,300);
+poll();
+inp.focus();
+</script></body></html>""")
+
+    def api_terminal_read(self):
+        output = _terminal_read()
+        self._json_response({"output": output})
 
     def api_wifi_scan(self):
         import subprocess
