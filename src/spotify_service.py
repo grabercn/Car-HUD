@@ -190,6 +190,8 @@ def main():
     log("Polling now-playing...")
 
     last_voice_check = 0
+    _local_track = ""       # track name for local progress tracking
+    _local_start_time = 0   # when current track started playing
 
     while True:
         try:
@@ -246,7 +248,19 @@ def main():
                 artists = ", ".join(a["name"] for a in item.get("artists", []))
                 album = item.get("album", {}).get("name", "")
                 duration = max(0, (item.get("duration_ms") or 0)) / 1000
-                progress = max(0, (current.get("progress_ms") or 0)) / 1000
+                api_progress = max(0, (current.get("progress_ms") or 0)) / 1000
+
+                # Local progress tracking — API often returns 0 for raspotify
+                if track != _local_track:
+                    _local_track = track
+                    _local_start_time = time.time()
+                    if api_progress > 0:
+                        _local_start_time = time.time() - api_progress
+
+                if api_progress > 0:
+                    progress = api_progress
+                else:
+                    progress = min(time.time() - _local_start_time, duration) if _local_start_time > 0 else 0
                 device = current.get("device", {}).get("name", "")
                 volume = current.get("device", {}).get("volume_percent", 0)
                 shuffle = current.get("shuffle_state", False)
