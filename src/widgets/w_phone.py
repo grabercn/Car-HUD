@@ -5,9 +5,11 @@ import subprocess
 import pygame
 
 name = "Phone"
-priority = 10
+priority = 20
 
 _cache = {"connected": False, "name": "", "mac": "", "battery": "", "last_check": 0}
+_was_connected = False
+_connect_time = 0
 
 
 def is_active(hud, music):
@@ -32,6 +34,18 @@ def is_active(hud, music):
         _cache["connected"] = False
 
     return _cache["connected"]
+
+
+def urgency(hud, music):
+    """Promote when phone just connected (10 seconds)."""
+    global _was_connected, _connect_time
+    connected = _cache["connected"]
+    if connected and not _was_connected:
+        _connect_time = time.time()
+    _was_connected = connected
+    if connected and time.time() - _connect_time < 10:
+        return -80  # just connected — show prominently
+    return 0
 
 
 def draw(hud, x, y, w, h, music):

@@ -1,16 +1,19 @@
 """Car-HUD Widget System
-Auto-discovers and loads widget modules from this directory.
-Each widget module must have:
+Auto-discovers widget modules (w_*.py). Each widget can:
   - name: str — display name
-  - priority: int — lower = shown first (0=highest)
-  - def is_active(hud, music) -> bool — whether widget has content
-  - def draw(hud, x, y, w, h, music) -> bool — render widget, return True if drawn
+  - priority: int — base priority (lower = shown first)
+  - def is_active(hud, music) -> bool — has content to show?
+  - def draw(hud, x, y, w, h, music) -> bool — render, return True if drawn
+  - def urgency(hud, music) -> int (optional) — 0=normal, negative=promote above priority
+    Widget returns negative urgency to temporarily jump ahead of others.
+    e.g. music widget returns -100 when a new song starts, so it shows first.
 """
 
 import os
 import json
 import importlib
 import glob
+import time
 
 _widgets = []
 _loaded = False
@@ -18,7 +21,6 @@ CONFIG_FILE = "/home/chrismslist/car-hud/.widget-config.json"
 
 
 def _load_widgets():
-    """Auto-discover widget modules in this directory."""
     global _widgets, _loaded
     if _loaded:
         return
@@ -38,7 +40,6 @@ def _load_widgets():
 
 
 def _load_config():
-    """Load widget visibility config."""
     try:
         with open(CONFIG_FILE) as f:
             return json.load(f)
@@ -47,7 +48,6 @@ def _load_config():
 
 
 def save_config(config):
-    """Save widget visibility config."""
     try:
         with open(CONFIG_FILE, "w") as f:
             json.dump(config, f)
@@ -56,25 +56,30 @@ def save_config(config):
 
 
 def get_active(hud, music):
-    """Return list of (name, module) for enabled widgets that have content."""
+    """Return active widgets sorted by effective priority (base + urgency)."""
     _load_widgets()
     config = _load_config()
     active = []
     for mod in _widgets:
         wname = mod.name.lower()
-        # Check if widget is disabled in config (enabled by default)
         if not config.get(wname, {}).get("enabled", True):
             continue
         try:
             if mod.is_active(hud, music):
-                active.append((mod.name, mod))
+                # Effective priority = base priority + urgency adjustment
+                urg = 0
+                if hasattr(mod, "urgency"):
+                    urg = mod.urgency(hud, music)
+                eff = getattr(mod, "priority", 50) + urg
+                active.append((eff, mod.name, mod))
         except Exception:
             pass
-    return active
+
+    active.sort(key=lambda x: x[0])
+    return [(name, mod) for _, name, mod in active]
 
 
 def get_all():
-    """Return all loaded widget modules with their config state."""
     _load_widgets()
     config = _load_config()
     result = []
@@ -89,7 +94,6 @@ def get_all():
 
 
 def set_enabled(widget_name, enabled):
-    """Enable or disable a widget by name."""
     config = _load_config()
     config[widget_name.lower()] = {"enabled": enabled}
     save_config(config)

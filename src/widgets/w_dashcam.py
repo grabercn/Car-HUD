@@ -8,6 +8,8 @@ name = "Dashcam"
 priority = 15
 
 RED = (220, 45, 45)
+_was_recording = False
+_rec_start_time = 0
 
 
 def is_active(hud, music):
@@ -17,6 +19,18 @@ def is_active(hud, music):
         return time.time() - cd.get("timestamp", 0) < 60 and cd.get("recording")
     except Exception:
         return False
+
+
+def urgency(hud, music):
+    """Promote when recording just started (10 seconds)."""
+    global _was_recording, _rec_start_time
+    recording = is_active(hud, music)
+    if recording and not _was_recording:
+        _rec_start_time = time.time()
+    _was_recording = recording
+    if recording and time.time() - _rec_start_time < 10:
+        return -50
+    return 0
 
 
 def draw(hud, x, y, w, h, music):

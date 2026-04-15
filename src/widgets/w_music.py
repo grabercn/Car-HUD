@@ -5,11 +5,26 @@ import time
 import pygame
 
 name = "Music"
-priority = 0  # highest — always show first
+priority = 10
+
+_last_track = ""
+_track_change_time = 0
 
 
 def is_active(hud, music):
     return music.get("playing", False)
+
+
+def urgency(hud, music):
+    """Promote to top when track changes (for 15 seconds)."""
+    global _last_track, _track_change_time
+    track = music.get("track", "")
+    if track and track != _last_track:
+        _last_track = track
+        _track_change_time = time.time()
+    if time.time() - _track_change_time < 15:
+        return -100  # jump to top
+    return -10  # still high priority when playing
 
 
 def draw(hud, x, y, w, h, music):

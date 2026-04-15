@@ -23,6 +23,7 @@ TOKEN_FILE = os.path.join(INSTALL_DIR, ".spotify_token")
 MUSIC_FILE = "/tmp/car-hud-music-data"
 VOICE_FILE = "/tmp/car-hud-voice-signal"
 LOG_FILE = "/tmp/car-hud-spotify.log"
+LIBRESPOT_EVENT_FILE = "/tmp/car-hud-librespot-event"
 
 SCOPES = "user-read-playback-state user-modify-playback-state user-read-currently-playing"
 REDIRECT_URI = "http://127.0.0.1:8888/callback"
@@ -192,20 +193,52 @@ def main():
 
     while True:
         try:
-            # Try currently_playing first (faster, more reliable)
+            # Check raspotify journal for actual track (API is often stale)
+            librespot_track = None
+            try:
+                import subprocess as _sp
+                jlog = _sp.run(
+                    ["journalctl", "-u", "raspotify", "--no-pager", "-n", "10",
+                     "--since", "5 min ago", "-o", "cat"],
+                    capture_output=True, text=True, timeout=3)
+                for line in reversed(jlog.stdout.strip().splitlines()):
+                    if "Loading <" in line and "> with Spotify URI" in line:
+                        # Extract: Loading <Track Name> with Spotify URI <spotify:track:ID>
+                        name_start = line.index("Loading <") + 9
+                        name_end = line.index("> with Spotify URI")
+                        uri_start = line.index("<spotify:track:") + 15
+                        uri_end = line.index(">", uri_start)
+                        librespot_track = {
+                            "name": line[name_start:name_end],
+                            "id": line[uri_start:uri_end],
+                        }
+                        break
+                    elif "device became inactive" in line:
+                        librespot_track = None
+                        break
+            except Exception:
+                pass
+
+            # Get playback state from API
             current = None
             try:
                 current = sp.current_playback()
             except Exception:
                 pass
-            if not current:
-                try:
-                    cp = sp.currently_playing()
-                    if cp:
-                        current = cp
-                        current["device"] = {"name": "Spotify", "volume_percent": 0}
-                except Exception:
-                    pass
+
+            # If librespot is playing a different track than API reports, fetch it
+            if librespot_track and current:
+                api_track_id = (current.get("item") or {}).get("id", "")
+                if librespot_track["id"] != api_track_id:
+                    try:
+                        track_info = sp.track(librespot_track["id"])
+                        if track_info:
+                            current["item"] = track_info
+                            current["is_playing"] = True
+                            current["progress_ms"] = 0
+                            log(f"Track override: {librespot_track['name']}")
+                    except Exception:
+                        pass
 
             if current and current.get("is_playing"):
                 item = current.get("item", {})
