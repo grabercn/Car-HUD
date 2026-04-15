@@ -1,4 +1,4 @@
-"""Vehicle page — OBD instrument cluster with scrolling widget."""
+"""Vehicle page — OBD instrument cluster with rotating widget."""
 
 import math
 import time
@@ -10,16 +10,12 @@ GREEN = (0, 180, 85)
 AMBER = (220, 160, 0)
 RED = (220, 45, 45)
 
-_view_idx = 0
-_view_start = 0
-_anim_t = 0.0
-_anim_start = 0
-_ANIM_SECS = 1.2
+_CYCLE_SECS = 6  # seconds per widget
+_last_idx = -1
+_slide_offset = 0
 
 
 def draw(hud, obd, music):
-    global _view_idx, _view_start, _anim_t, _anim_start
-
     W, H = hud.width, hud.height
     s = hud.surf
     t = hud.t
@@ -97,46 +93,26 @@ def draw(hud, obd, music):
     hud.draw_glow_text(f"{cool:.0f}C", hud.font_xs, t["text_med"],
                        (cx - 60 - hud.font_xs.size(f"{cool:.0f}C")[0], cy + 60))
 
-    # ── Widget scroll — below CHG/BATT labels ──
+    # ── Widget — simple time-based rotation ──
     wly = cy + 96
-    widget_h = H - wly - 24
+    widget_h = H - wly - 4
 
     active = widgets.get_active(hud, music)
     if not active:
         return
 
     n = len(active)
-    cur_mod = active[_view_idx % n][1]
-    pause = getattr(cur_mod, "view_time", 6)
+    global _last_idx, _slide_offset
+    idx = int(now_t / _CYCLE_SECS) % n
 
-    if _anim_t == 0.0:
-        if _view_start == 0:
-            _view_start = now_t
-        if _view_start > 0 and now_t - _view_start >= pause and n > 1:
-            _anim_t = 0.001
-            _anim_start = now_t
+    if idx != _last_idx:
+        _last_idx = idx
+        _slide_offset = 16
 
-    if _anim_t > 0:
-        _anim_t = min((now_t - _anim_start) / _ANIM_SECS, 1.0)
-        if _anim_t >= 1.0:
-            _view_idx = (_view_idx + 1) % n
-            _anim_t = 0.0
-            _view_start = now_t
+    if _slide_offset > 0:
+        _slide_offset = max(0, _slide_offset - 3)
 
-    ease = 1.0 - (1.0 - _anim_t) ** 3 if _anim_t > 0 else 0.0
-    scroll_px = int(ease * widget_h)
-
-    clip = pygame.Rect(6, wly, W - 12, widget_h)
-    old_clip = s.get_clip()
-    s.set_clip(clip)
-
-    # Current widget (scrolling out)
-    ci = _view_idx % n
-    active[ci][1].draw(hud, 6, wly - scroll_px, W - 12, widget_h, music)
-
-    # Next widget (scrolling in)
-    if _anim_t > 0:
-        ni = (_view_idx + 1) % n
-        active[ni][1].draw(hud, 6, wly + widget_h - scroll_px, W - 12, widget_h, music)
-
-    s.set_clip(old_clip)
+    try:
+        active[idx][1].draw(hud, 6, wly + _slide_offset, W - 12, widget_h, music)
+    except Exception:
+        pass

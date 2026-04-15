@@ -1286,6 +1286,11 @@ class CarHUD:
                     self.theme_name = new_theme
                     self.t = THEMES[self.theme_name]
                     self._build_tinted_logo()
+                    # Clear render caches on theme change
+                    if hasattr(self, '_text_cache'):
+                        self._text_cache.clear()
+                    if hasattr(self, '_arc_cache'):
+                        self._arc_cache.clear()
 
             self.kb_check_timer += 1
             if self.kb_check_timer >= 150:
@@ -1301,10 +1306,10 @@ class CarHUD:
 
             if show_vehicle:
                 self.draw_vehicle_page(obd, music)
+                # No status strip on OBD page — more room for widgets
             else:
                 self.draw_system_page(stats, music)
-
-            self.draw_status_strip(obd)
+                self.draw_status_strip(obd)
 
             # Check voice signal for overlays (help, keys, camera, save)
             try:
