@@ -195,7 +195,8 @@ def _terminal_ensure():
     if _term_fd is None:
         pid, fd = pty.fork()
         if pid == 0:
-            # Child — exec bash
+            # Child — set TERM and exec bash
+            os.environ["TERM"] = "xterm"
             os.execvp("bash", ["bash", "--login"])
         else:
             _term_pid = pid
@@ -805,12 +806,16 @@ nav a:hover,nav a.active{opacity:1}
 </nav>
 <div id="term"></div>
 <div class="toolbar">
-<button onclick="send('sudo systemctl restart car-hud\\n')">Restart HUD</button>
-<button onclick="send('sudo systemctl status car-hud\\n')">HUD Status</button>
-<button onclick="send('journalctl -u car-hud --no-pager -n 20\\n')">HUD Logs</button>
-<button onclick="send('df -h / | tail -1\\n')">Disk</button>
-<button onclick="send('free -h | head -2\\n')">Memory</button>
+<button onclick="send('\\n')">Enter</button>
 <button onclick="send('\\x03')">Ctrl+C</button>
+<button onclick="send('q\\n')">q</button>
+<button onclick="send('sudo systemctl restart car-hud\\n')">Restart HUD</button>
+<button onclick="send('sudo systemctl status car-hud --no-pager\\n')">HUD Status</button>
+<button onclick="send('journalctl -u car-hud --no-pager -n 20\\n')">Logs</button>
+<button onclick="send('htop -d 20\\n')">htop</button>
+<button onclick="send('df -h /\\n')">Disk</button>
+<button onclick="send('free -h\\n')">Mem</button>
+<button onclick="send('sudo reboot\\n')">Reboot</button>
 <button onclick="send('clear\\n')">Clear</button>
 </div>
 <div class="input-bar">

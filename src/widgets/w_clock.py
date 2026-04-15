@@ -37,28 +37,22 @@ def draw(hud, x, y, w, h, music):
     except Exception:
         used, total, disk_pct = 0, 0, 0
 
-    # Left: uptime icon + text
-    # Clock icon
-    pygame.draw.circle(s, t["text_med"], (x + 16, cy), 7, 2)
-    pygame.draw.line(s, t["text_med"], (x + 16, cy), (x + 16, cy - 4), 2)
-    pygame.draw.line(s, t["text_med"], (x + 16, cy), (x + 19, cy + 1), 2)
+    # Uptime — bold, left side
+    ut = hud.font_md.render(f"Up {up_str}", True, t["text_bright"])
+    s.blit(ut, (x + 12, cy - 10))
 
-    ut = hud.font_sm.render(up_str, True, t["text_bright"])
-    s.blit(ut, (x + 28, cy - 8))
-
-    # Right: disk bar
+    # Disk — right side with bar
     bar_x = x + w // 2 + 10
     bar_w = w // 2 - 30
-    bar_h = 6
-    bar_y = cy - bar_h // 2
+    bar_y = cy - 3
 
-    pygame.draw.rect(s, t["border"], (bar_x, bar_y, bar_w, bar_h), border_radius=3)
+    pygame.draw.rect(s, t["border"], (bar_x, bar_y, bar_w, 6), border_radius=3)
     fw = int(bar_w * min(disk_pct, 1))
     dc = t["primary"] if disk_pct < 0.7 else (220, 160, 0) if disk_pct < 0.9 else (220, 45, 45)
     if fw > 0:
-        pygame.draw.rect(s, dc, (bar_x, bar_y, fw, bar_h), border_radius=3)
+        pygame.draw.rect(s, dc, (bar_x, bar_y, fw, 6), border_radius=3)
 
-    dt = hud.font_xs.render(f"{used:.0f}/{total:.0f}G", True, t["text_dim"])
-    s.blit(dt, (bar_x, bar_y + bar_h + 2))
+    dt = hud.font_sm.render(f"{used:.0f}/{total:.0f}G", True, t["text_med"])
+    s.blit(dt, (bar_x, bar_y + 10))
 
     return True

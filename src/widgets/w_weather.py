@@ -46,11 +46,12 @@ def _fetch_weather():
 
 
 def is_active(hud, music):
-    # Fetch every 15 min in background, keep showing old data
-    if time.time() - _data["last_fetch"] > 900:
+    # First fetch is synchronous (blocks ~1s) so widget shows immediately
+    if _data["last_fetch"] == 0:
+        _fetch_weather()
+    elif time.time() - _data["last_fetch"] > 900:
         threading.Thread(target=_fetch_weather, daemon=True).start()
-    # Stay active even if data is old — show last known weather
-    return _data["ok"] or _data.get("temp", "") != ""
+    return _data["ok"]
 
 
 def urgency(hud, music):
