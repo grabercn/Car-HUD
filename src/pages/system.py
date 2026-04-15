@@ -1,4 +1,4 @@
-"""System page — time header, smooth-scrolling widget carousel."""
+"""System page — time header, smooth widget carousel."""
 
 import time
 import datetime
@@ -9,35 +9,32 @@ GREEN = (0, 180, 85)
 AMBER = (220, 160, 0)
 RED = (220, 45, 45)
 
-# Scroll state
-_scroll_y = 0.0
-_scroll_from = 0.0
-_scroll_to = 0.0
-_scroll_start_t = 0      # time animation started
-_SCROLL_DURATION = 0.35  # seconds for complete scroll
-_view_start = 0
-_current_pair = 0
-_scrolling = False
+_view_idx = 0        # which pair is currently showing (0-based)
+_view_start = 0      # when this pair started showing
+_anim_t = 0.0        # 0.0 = resting, >0 = animating (0→1 over ANIM_SECS)
+_anim_start = 0
+_ANIM_SECS = 0.4
 
 
 def draw(hud, stats, music):
-    global _scroll_y, _scroll_from, _scroll_to, _scroll_start_t, _view_start, _current_pair, _scrolling
+    global _view_idx, _view_start, _anim_t, _anim_start
 
     W, H = hud.width, hud.height
     s = hud.surf
     t = hud.t
     now = datetime.datetime.now()
+    now_t = time.time()
 
     # ── Header ──
     time_str = now.strftime("%I:%M")
     ampm = now.strftime("%p")
     hud.draw_glow_text(time_str, hud.font_xxl, t["text_bright"], (10, 2))
-    ampm_x = 10 + hud.font_xxl.size(time_str)[0] + 4
-    hud.draw_glow_text(ampm, hud.font_sm, t["accent"], (ampm_x, 32))
+    hud.draw_glow_text(ampm, hud.font_sm, t["accent"],
+                       (10 + hud.font_xxl.size(time_str)[0] + 4, 32))
 
     date_str = now.strftime("%a, %b %d").upper()
-    dw = hud.font_sm.size(date_str)[0]
-    hud.draw_glow_text(date_str, hud.font_sm, t["text_med"], (W - dw - 10, 8))
+    hud.draw_glow_text(date_str, hud.font_sm, t["text_med"],
+                       (W - hud.font_sm.size(date_str)[0] - 10, 8))
 
     temp = stats.get("cpu_temp", 0)
     mp = stats.get("mem_used_pct", 0)
@@ -47,10 +44,11 @@ def draw(hud, stats, music):
     dy = 50
     pygame.draw.line(s, t["border_lite"], (10, dy), (W - 10, dy))
 
-    # ── Widget carousel ──
+    # ── Widget area ──
     wy = dy + 3
     strip_y = H - 22
     avail_h = strip_y - wy - 2
+    widget_h = avail_h // 2 - 2
 
     active = widgets.get_active(hud, music)
     if not active:
@@ -63,68 +61,59 @@ def draw(hud, stats, music):
         return
 
     n = len(active)
-    widget_h = avail_h // 2 - 2
-    page_h = avail_h  # one "page" = 2 widgets stacked
+    n_pairs = max(1, (n + 1) // 2)
 
-    # Determine how long to pause on current view
-    # Use the longest view_time of the visible widgets
-    if n > 0:
-        idx1 = (_current_pair * 2) % n
-        idx2 = (_current_pair * 2 + 1) % n
-        vt1 = getattr(active[idx1][1], "view_time", 6)
-        vt2 = getattr(active[idx2][1], "view_time", 6) if n > 1 else 0
-        pause_time = max(vt1, vt2)
-    else:
-        pause_time = 6
+    # Get pause time from longest widget in current pair
+    i0 = (_view_idx * 2) % n
+    pause = getattr(active[i0][1], "view_time", 6)
 
-    now_t = time.time()
-
-    # State machine: pause → scroll → pause → scroll...
-    if not _scrolling:
+    # Trigger animation when pause expires
+    if _anim_t == 0.0:
         if _view_start == 0:
             _view_start = now_t
-        if now_t - _view_start > pause_time and n > 2:
-            _scrolling = True
-            _current_pair += 1
-            _scroll_from = _scroll_y
-            _scroll_to = _current_pair * page_h
-            _scroll_start_t = now_t
-    else:
-        # Time-based ease-out (cubic) — fixed duration, pixel-perfect
-        elapsed = now_t - _scroll_start_t
-        progress = min(elapsed / _SCROLL_DURATION, 1.0)
-        # Cubic ease-out: 1 - (1-t)^3
-        eased = 1.0 - (1.0 - progress) ** 3
-        _scroll_y = _scroll_from + (_scroll_to - _scroll_from) * eased
+        if now_t - _view_start > pause and n_pairs > 1:
+            _anim_t = 0.001  # start
+            _anim_start = now_t
 
-        if progress >= 1.0:
-            _scroll_y = _scroll_to
-            _scrolling = False
+    # Advance animation
+    if _anim_t > 0:
+        _anim_t = min((now_t - _anim_start) / _ANIM_SECS, 1.0)
+        if _anim_t >= 1.0:
+            _view_idx = (_view_idx + 1) % n_pairs
+            _anim_t = 0.0
             _view_start = now_t
-            total_pages = (n + 1) // 2
-            if _current_pair >= total_pages:
-                _current_pair = 0
-                _scroll_y = 0.0
 
-    # Clip and render
+    # Ease-out curve
+    ease = 1.0 - (1.0 - _anim_t) ** 3 if _anim_t > 0 else 0.0
+    scroll_px = int(ease * avail_h)
+
+    # Clip to widget area
     clip = pygame.Rect(6, wy, W - 12, avail_h)
     old_clip = s.get_clip()
     s.set_clip(clip)
 
-    offset = int(_scroll_y)
-    for i in range(n + 2):
-        idx = i % n
-        wname, mod = active[idx]
-        row = i // 2
-        col = i % 2
-        slot_y = wy + row * page_h + col * (widget_h + 4) - offset
+    # Draw current pair (scrolling up/out)
+    for j in range(2):
+        wi = (_view_idx * 2 + j) % n
+        wname, mod = active[wi]
+        draw_y = wy + j * (widget_h + 4) - scroll_px
+        if draw_y + widget_h >= wy and draw_y < strip_y:
+            try:
+                mod.draw(hud, 6, draw_y, W - 12, widget_h, music)
+            except Exception:
+                pass
 
-        if slot_y + widget_h < wy or slot_y > strip_y:
-            continue
-
-        try:
-            mod.draw(hud, 6, slot_y, W - 12, widget_h, music)
-        except Exception:
-            pass
+    # Draw next pair (scrolling in from below) — only during animation
+    if _anim_t > 0:
+        next_idx = (_view_idx + 1) % n_pairs
+        for j in range(2):
+            wi = (next_idx * 2 + j) % n
+            wname, mod = active[wi]
+            draw_y = wy + avail_h + j * (widget_h + 4) - scroll_px
+            if draw_y + widget_h >= wy and draw_y < strip_y:
+                try:
+                    mod.draw(hud, 6, draw_y, W - 12, widget_h, music)
+                except Exception:
+                    pass
 
     s.set_clip(old_clip)

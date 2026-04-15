@@ -546,100 +546,85 @@ class CarHUD:
         # Minimalist compact status pill
         sy = H - 30
 
-        # Audio detection
-        ac = t["text_dim"]
-        has_in = False
-        has_out = False
+        # Color scheme: primary=connected, amber=service running, dark=(30,30,30)=off
+        OFF = (30, 30, 30)
+
+        # MIC — primary if voice active, amber if hardware present, off otherwise
+        ac = OFF
+        voice_running = False
+        has_mic = False
         for i in range(5):
             p = f"/proc/asound/card{i}/id"
             if os.path.exists(p):
                 try:
                     with open(p) as f:
-                        card_id = f.read().strip()
-                        if card_id in ("Audio", "Card"):  # AB13X or Razer
-                            has_in = True
-                            has_out = True
-                        elif card_id == "Headphones":
-                            has_out = True
+                        cid = f.read().strip()
+                        if cid in ("Audio", "Card"):
+                            has_mic = True
                 except Exception:
                     pass
+        try:
+            lvl_age = time.time() - os.path.getmtime("/tmp/car-hud-mic-level")
+            voice_running = lvl_age < 15
+        except Exception:
+            pass
+        if has_mic and voice_running:
+            ac = t["primary"]
+        elif has_mic:
+            ac = AMBER
 
-        # OBD — primary=connected, amber=service running, dim=off
+        # OBD — primary=data flowing, amber=service running, off=down
         if obd["connected"] and obd.get("data"):
             oc = t["primary"]
         elif obd.get("status") and obd["status"] not in ("offline", ""):
             oc = AMBER
         else:
-            oc = t["text_dim"]
+            oc = OFF
 
-        # Music
+        # PHN — primary=connected, amber=BT on, off=BT off
         music = self.get_music_data()
-        # Phone/BT indicator
-        phone_c = t["text_dim"]
+        phone_c = OFF
         try:
             import subprocess as _sp
             bt_info = _sp.run(["bluetoothctl", "info"], capture_output=True, text=True, timeout=3)
             if "Connected: yes" in bt_info.stdout:
-                phone_c = t["primary"]  # connected
-            elif bt_info.returncode == 0 and "Device" in bt_info.stdout:
-                phone_c = AMBER  # paired but not connected
+                phone_c = t["primary"]
             else:
                 bt_state = _sp.run(["bluetoothctl", "show"], capture_output=True, text=True, timeout=3)
                 if "Powered: yes" in bt_state.stdout:
-                    phone_c = AMBER  # BT on, searching
+                    phone_c = AMBER
         except Exception:
             pass
 
-        # Network
-        nc = t["text_dim"]
-        net_ssid = ""
+        # NET — primary=connected, amber=connecting, off=down
+        nc = OFF
         try:
             with open("/tmp/car-hud-wifi-data") as f:
                 wd = json.load(f)
                 ws = wd.get("state", "")
-                net_ssid = wd.get("ssid", "")
-                if ws == "connected" or ws == "tethered":
+                if ws in ("connected", "tethered"):
                     nc = t["primary"]
                 elif ws == "connecting":
                     nc = AMBER
-                elif ws == "failed":
-                    nc = RED
         except Exception:
             pass
 
-        # AUD (Mic)
-        voice_running = False
-        try:
-            with open("/tmp/car-hud-mic-level") as f:
-                lvl_age = time.time() - os.path.getmtime("/tmp/car-hud-mic-level")
-                voice_running = lvl_age < 15
-        except Exception:
-            pass
-
-        if has_in and voice_running:
-            ac = t["primary"]
-        elif has_in:
-            ac = AMBER
-        elif has_out:
-            ac = AMBER
-
-        # CAM
-        cam_c = t["text_dim"]
-        cam_count = 0
+        # CAM — red blink=recording, primary=camera present, amber=service running, off=none
+        cam_c = OFF
         try:
             with open("/tmp/car-hud-dashcam-data") as f:
                 cd = json.load(f)
                 if time.time() - cd.get("timestamp", 0) < 60:
-                    cam_count = cd.get("cam_count", 0)
                     if cd.get("recording"):
-                        cam_c = RED if int(time.time() * 2) % 2 == 0 else (120, 0, 0) # Blinking
+                        cam_c = RED if int(time.time() * 2) % 2 == 0 else (120, 0, 0)
+                    elif cd.get("cam_count", 0) > 0:
+                        cam_c = t["primary"]
                     else:
-                        cam_c = t["primary"] if cam_count > 0 else t["text_dim"]
+                        cam_c = AMBER
         except Exception:
             pass
-        if cam_count == 0 and os.path.exists("/dev/video0"):
-            cam_count = 1
-            if cam_c == t["text_dim"]: cam_c = AMBER
+        if cam_c == OFF and os.path.exists("/dev/video0"):
+            cam_c = AMBER
 
         modules = [("mic", ac), ("obd", oc), ("phn", phone_c),
                    ("net", nc), ("cam", cam_c)]
