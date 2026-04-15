@@ -209,6 +209,9 @@ class CarHUD:
         self.force_page = None   # None=auto, "vehicle", "system"
         self.page_names = ["system", "vehicle"]
         self.page_idx = 0
+        self.page_transition = 0  # frames remaining in transition
+        self.transition_dir = 1   # 1=slide right, -1=slide left
+        self.prev_frame = None    # snapshot of previous page
 
         # Theme
         self.auto_theme = True
@@ -462,7 +465,7 @@ class CarHUD:
             art_loaded = False
             try:
                 art_file = "/home/chrismslist/car-hud/current_art.jpg"
-                if os.path.exists(art_file) and time.time() - os.path.getmtime(art_file) < 300:
+                if os.path.exists(art_file) and os.path.getsize(art_file) > 100:
                     from PIL import Image as PILImage
                     pil = PILImage.open(art_file).convert("RGB")
                     pil = pil.resize((art_size, art_size), PILImage.LANCZOS)
@@ -499,9 +502,12 @@ class CarHUD:
             at = artist_font.render(artist[:max_c], True, t["text_med"])
             s.blit(at, (tx, y + 18))
 
-            # Progress bar
+            # Progress bar — estimate from timestamp if API returns 0
             prog = max(0, music.get("progress", 0))
             dur = max(0, music.get("duration", 0))
+            if prog == 0 and dur > 0 and music.get("timestamp"):
+                elapsed = time.time() - music["timestamp"]
+                prog = min(elapsed, dur)
             if dur > 0:
                 pbar_y = y + 36
                 pygame.draw.rect(s, t["border"], (tx, pbar_y, tw, 4), border_radius=2)
@@ -1175,18 +1181,26 @@ class CarHUD:
                         ty = td.get("y", 0)
                         if g == "tap":
                             if ty < self.height - 30:
+                                # Save current frame for transition
+                                self.prev_frame = self.surf.copy()
                                 self.page_idx = (self.page_idx + 1) % len(self.page_names)
                                 self.force_page = self.page_names[self.page_idx]
+                                self.page_transition = 8
+                                self.transition_dir = 1
                             else:
                                 themes = list(THEMES.keys())
                                 ci = themes.index(self.theme_name) if self.theme_name in themes else 0
                                 self.set_theme(themes[(ci + 1) % len(themes)])
                         elif g in ("swipe_left", "swipe_right"):
+                            self.prev_frame = self.surf.copy()
+                            d = -1 if g == "swipe_right" else 1
                             if g == "swipe_right":
                                 self.page_idx = (self.page_idx - 1) % len(self.page_names)
                             else:
                                 self.page_idx = (self.page_idx + 1) % len(self.page_names)
                             self.force_page = self.page_names[self.page_idx]
+                            self.page_transition = 8
+                            self.transition_dir = d
             except Exception:
                 pass
 
@@ -1401,6 +1415,23 @@ class CarHUD:
 
             if self.show_terminal:
                 self.draw_terminal_overlay()
+
+            # Page transition slide animation
+            if self.page_transition > 0 and self.prev_frame:
+                t_pct = self.page_transition / 8.0
+                offset = int(self.width * t_pct * 0.3 * self.transition_dir)
+                combined = pygame.Surface((self.width, self.height))
+                combined.fill(self.t["bg"])
+                # Old page sliding out
+                combined.blit(self.prev_frame, (offset, 0))
+                # New page sliding in from opposite side
+                new_offset = -self.transition_dir * int(self.width * 0.3) + offset
+                combined.set_alpha(int(255 * (1 - t_pct * 0.5)))
+                combined.blit(self.surf, (new_offset - offset, 0))
+                self.surf.blit(combined, (0, 0))
+                self.page_transition -= 1
+                if self.page_transition == 0:
+                    self.prev_frame = None
 
             self.present()
             self.clock_t.tick(30)
