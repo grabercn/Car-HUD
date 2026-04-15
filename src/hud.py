@@ -27,77 +27,77 @@ from pages import vehicle as vehicle_page, system as system_page
 # Themes modeled on 2014 Car-HUD iMID color options
 # Each theme completely transforms the entire display
 THEMES = {
-    "blue": {  # Default Car-HUD blue
-        "primary":    (0, 180, 255),     # Bright cyan-blue gauges
-        "primary_dim":(0, 110, 180),     # Dim gauge backgrounds (brighter for TFT)
-        "accent":     (0, 130, 220),     # Secondary elements
-        "bg":         (2, 4, 12),        # Deep blue-black
-        "panel":      (5, 10, 25),
-        "border":     (10, 30, 60),
-        "border_lite":(8, 22, 45),
-        "text_bright":(220, 240, 255),   # Blue-white text
-        "text_med":   (140, 190, 240),   # Boosted for 2.5" TFT
-        "text_dim":   (80, 140, 200),    # Readable on small TFT
+    "blue": {  # Honda 2014 Default Blue (High Contrast)
+        "primary":    (0, 200, 255),     # Vibrant cyan-blue
+        "primary_dim":(0, 90, 160),      # Dimmer cyan
+        "accent":     (0, 150, 240),
+        "bg":         (4, 8, 16),        # Very dark blue-black
+        "panel":      (10, 16, 32),
+        "border":     (20, 40, 80),
+        "border_lite":(15, 30, 60),
+        "text_bright":(240, 250, 255),   # Crisp white with blue tint
+        "text_med":   (160, 210, 255),   # Legible light blue
+        "text_dim":   (100, 150, 200),   # Muted blue
     },
-    "red": {  # Honda Sport red
-        "primary":    (255, 30, 30),     # Vivid red gauges
-        "primary_dim":(180, 20, 20),     # Brighter red backgrounds
-        "accent":     (220, 20, 20),
-        "bg":         (12, 2, 2),        # Deep red-black
-        "panel":      (25, 5, 5),
-        "border":     (60, 12, 12),
-        "border_lite":(45, 10, 10),
-        "text_bright":(255, 210, 200),   # Warm white
-        "text_med":   (240, 150, 140),   # Boosted
-        "text_dim":   (180, 90, 80),     # Readable
+    "red": {  # Honda 2014 Sport Red
+        "primary":    (255, 40, 40),     # Glowing crimson red
+        "primary_dim":(160, 20, 20),
+        "accent":     (220, 30, 30),
+        "bg":         (12, 4, 4),        # Deep red-black
+        "panel":      (28, 8, 8),
+        "border":     (80, 20, 20),
+        "border_lite":(60, 15, 15),
+        "text_bright":(255, 230, 230),   # Crisp white with red tint
+        "text_med":   (255, 160, 160),
+        "text_dim":   (200, 100, 100),
     },
-    "green": {  # Honda Eco green
-        "primary":    (0, 230, 100),     # Vivid green gauges
-        "primary_dim":(0, 150, 65),      # Brighter green backgrounds
-        "accent":     (0, 200, 80),
-        "bg":         (2, 10, 4),        # Deep green-black
-        "panel":      (4, 22, 10),
-        "border":     (10, 50, 20),
-        "border_lite":(8, 38, 16),
-        "text_bright":(210, 255, 220),   # Green-white
-        "text_med":   (130, 220, 150),   # Boosted
-        "text_dim":   (80, 170, 100),    # Readable
+    "green": {  # Honda 2014 Eco Green
+        "primary":    (30, 240, 120),    # Vibrant eco green
+        "primary_dim":(15, 140, 70),
+        "accent":     (20, 200, 100),
+        "bg":         (4, 12, 6),        # Very dark green-black
+        "panel":      (8, 24, 12),
+        "border":     (20, 70, 30),
+        "border_lite":(15, 50, 25),
+        "text_bright":(230, 255, 240),
+        "text_med":   (150, 240, 180),
+        "text_dim":   (100, 180, 120),
     },
-    "amber": {  # Classic amber instruments
-        "primary":    (255, 180, 0),     # Bright amber gauges
-        "primary_dim":(160, 110, 0),     # Brighter amber backgrounds
-        "accent":     (230, 150, 0),
-        "bg":         (10, 7, 2),        # Deep amber-black
-        "panel":      (22, 16, 5),
-        "border":     (55, 40, 10),
-        "border_lite":(40, 30, 8),
-        "text_bright":(255, 240, 190),   # Warm amber-white
-        "text_med":   (230, 180, 90),    # Boosted
-        "text_dim":   (170, 130, 50),    # Readable
+    "amber": {  # Classic Honda Amber
+        "primary":    (255, 160, 0),     # Glowing amber
+        "primary_dim":(150, 90, 0),
+        "accent":     (220, 130, 0),
+        "bg":         (12, 8, 2),        # Very dark amber-black
+        "panel":      (28, 18, 5),
+        "border":     (80, 50, 15),
+        "border_lite":(60, 35, 10),
+        "text_bright":(255, 245, 210),
+        "text_med":   (255, 200, 110),
+        "text_dim":   (200, 140, 60),
     },
-    "day": {  # High-contrast daylight mode
-        "primary":    (0, 0, 0),         # Black gauges on white
-        "primary_dim":(130, 130, 130),
-        "accent":     (40, 40, 40),
-        "bg":         (240, 240, 235),   # Bright white
-        "panel":      (225, 225, 220),
-        "border":     (180, 180, 175),
-        "border_lite":(200, 200, 195),
-        "text_bright":(0, 0, 0),         # Pure black text
-        "text_med":   (40, 40, 40),
-        "text_dim":   (80, 80, 80),
+    "day": {  # Ultra-high contrast for bright sunlight
+        "primary":    (0, 120, 255),     # Deep blue on white
+        "primary_dim":(150, 150, 150),
+        "accent":     (20, 20, 20),
+        "bg":         (245, 245, 250),   # Very bright cool white
+        "panel":      (230, 230, 235),
+        "border":     (180, 180, 190),
+        "border_lite":(200, 200, 210),
+        "text_bright":(10, 10, 15),      # Almost black
+        "text_med":   (60, 60, 70),
+        "text_dim":   (100, 100, 110),
     },
-    "night": {  # Ultra-dim night driving
-        "primary":    (0, 120, 160),     # Very dim blue
-        "primary_dim":(0, 60, 80),       # Slightly brighter for TFT
-        "accent":     (0, 80, 110),
-        "bg":         (1, 2, 4),         # Nearly black
-        "panel":      (3, 5, 10),
-        "border":     (6, 14, 25),
-        "border_lite":(5, 10, 18),
-        "text_bright":(120, 160, 190),   # Slightly brighter
-        "text_med":   (80, 120, 155),    # Boosted
-        "text_dim":   (50, 80, 110),     # Readable
+    "night": {  # Honda 2014 Night Mode (Minimal glare)
+        "primary":    (0, 100, 180),     # Deepest legible blue
+        "primary_dim":(0, 50, 90),
+        "accent":     (0, 80, 140),
+        "bg":         (2, 4, 6),         # Nearly pure black
+        "panel":      (5, 8, 12),
+        "border":     (10, 20, 30),
+        "border_lite":(8, 15, 25),
+        "text_bright":(140, 180, 210),   # Dimmed white
+        "text_med":   (90, 130, 160),
+        "text_dim":   (60, 90, 120),
     },
 }
 
@@ -542,11 +542,9 @@ class CarHUD:
         W, H = self.width, self.height
         s = self.surf
         t = self.t
-        sy = H - 26
-
-        # Strip background
-        pygame.draw.rect(s, (0, 0, 0, 80), (0, sy, W, 26))
-        pygame.draw.line(s, t["border_lite"], (0, sy), (W, sy))
+        
+        # Minimalist compact status pill
+        sy = H - 20
 
         # Audio detection
         ac = t["text_dim"]
@@ -643,58 +641,43 @@ class CarHUD:
             cam_count = 1
             if cam_c == t["text_dim"]: cam_c = AMBER
 
-        modules = [("AUD", ac), ("OBD", oc), ("PHN", phone_c),
-                   ("NET", nc), ("CAM", cam_c)]
-        mw = W // len(modules)
-        my = sy + 2
+        modules = [("MIC", ac), ("OBD", oc), ("PHN", phone_c),
+                   ("WIFI", nc), ("CAM", cam_c)]
+        
+        # Calculate width of the floating pill
+        pill_w = len(modules) * 36 + 10
+        pill_x = W - pill_w - 6
+        
+        pygame.draw.rect(s, (0, 0, 0, 140), (pill_x, sy, pill_w, 16), border_radius=8)
+        pygame.draw.rect(s, t["border_lite"], (pill_x, sy, pill_w, 16), 1, border_radius=8)
 
         for i, (name, color) in enumerate(modules):
-            mx = i * mw
+            mx = pill_x + 8 + i * 36
+            pygame.draw.circle(s, color, (mx + 4, sy + 8), 3)
+            mt = self.font_mono.render(name, True, color)
+            s.blit(mt, (mx + 10, sy + 2))
 
-            # Icon
-            if name == "CAM":
-                if cam_count == 1:
-                    pygame.draw.arc(s, color, (mx + mw // 2 - 4, my, 8, 8), 0, math.pi, 2)
-                elif cam_count >= 2:
-                    pygame.draw.circle(s, color, (mx + mw // 2, my + 4), 3)
-                else:
-                    pygame.draw.circle(s, color, (mx + mw // 2, my + 4), 3, 1)
-            else:
-                pygame.draw.circle(s, color, (mx + mw // 2, my + 4), 3)
-
-            # Label
-            mt = self.font_xs.render(name, True, color)
-            s.blit(mt, (mx + (mw - mt.get_width()) // 2, my + 10))
-
-        # Mic level bar — draw BEHIND the AUD text
+        # Mic level bar (miniature, above the pill)
         self._read_voice_signal()
-        aud_x = 0 * mw + 4
-        mic_w = mw - 8
-        mic_y = my + 8
+        mic_w = pill_w
+        mic_y = sy - 4
         half = mic_w // 2
 
-        # Background
-        pygame.draw.rect(s, t["border"], (aud_x, mic_y, mic_w, 3), border_radius=1)
+        pygame.draw.rect(s, t["border"], (pill_x, mic_y, mic_w, 2), border_radius=1)
 
-        # Left side: USB mic (fills left to center)
         if self.mic1_level > 0.01:
             lc = t["primary"] if self.mic1_level < 0.3 else GREEN if self.mic1_level < 0.6 else AMBER
             fw = max(1, int(half * self.mic1_level))
-            pygame.draw.rect(s, lc, (aud_x + half - fw, mic_y, fw, 3), border_radius=1)
+            pygame.draw.rect(s, lc, (pill_x + half - fw, mic_y, fw, 2), border_radius=1)
 
-        # Right side: webcam mic (fills center to right)
         if self.mic2_level > 0.01:
             rc = AMBER if self.mic2_level < 0.3 else GREEN if self.mic2_level < 0.6 else t["primary"]
             fw = max(1, int(half * self.mic2_level))
-            pygame.draw.rect(s, rc, (aud_x + half, mic_y, fw, 3), border_radius=1)
+            pygame.draw.rect(s, rc, (pill_x + half, mic_y, fw, 2), border_radius=1)
 
-        # Center divider tick
-        pygame.draw.line(s, t["text_dim"], (aud_x + half, mic_y), (aud_x + half, mic_y + 2))
-
-        # Keyboard shortcuts hint only when keyboard is connected (above strip)
         if self.has_keyboard:
             sc = self.font_xs.render("C:Cam 1-6:Theme", True, t["text_dim"])
-            s.blit(sc, (W - sc.get_width() - 4, sy - 12))
+            s.blit(sc, (6, sy))
 
     def get_voice_state(self):
         """Read transcript and determine voice UI state."""
@@ -1387,6 +1370,27 @@ class CarHUD:
                 text = voice_tr.get("partial", voice_tr.get("text", ""))
                 if text:
                     age = time.time() - voice_tr.get("time", 0)
+                    if age < 3:
+                        max_c = self.width // 7
+                        if len(text) > max_c:
+                            text = text[-max_c:]
+                        color = self.t["text_dim"] if "partial" in voice_tr else self.t["text_med"]
+                        tt = self.font_xs.render(text, True, color)
+                        self.surf.blit(tt, (16, self.height - 40))
+
+            if self.show_terminal:
+                self.draw_terminal_overlay()
+
+            self.present()
+            self.clock_t.tick(30)
+
+        pygame.quit()
+
+
+if __name__ == "__main__":
+    hud = CarHUD()
+    hud.run()
+me() - voice_tr.get("time", 0)
                     if age < 3:
                         max_c = self.width // 7
                         if len(text) > max_c:

@@ -117,14 +117,14 @@ def draw(hud, obd, music):
 
     # ── Lower Data ──
     hud.draw_glow_text(f"AIR {intake:.0f}C", hud.font_xs, t["text_dim"],
-                       (cx + 55, cy + 55))
+                       (cx + 60, cy + 60))
     hud.draw_glow_text(f"H2O {cool:.0f}C", hud.font_xs, t["text_med"],
-                       (cx - 55 - hud.font_xs.size(f"H2O {cool:.0f}C")[0], cy + 55))
+                       (cx - 60 - hud.font_xs.size(f"H2O {cool:.0f}C")[0], cy + 60))
 
-    # ── Widget strip — below all gauge labels ──
-    wly = cy + 90
-    pygame.draw.line(s, t["border_lite"], (10, wly), (W - 10, wly))
-
+    # ── Widget strip — dynamically placed to use remaining space ──
+    wly = cy + 95
+    # Remove the hard border line for a cleaner look
+    
     active = widgets.get_active(hud, music)
     if active:
         now_t = time.time()
@@ -134,7 +134,13 @@ def draw(hud, obd, music):
         if _widget_cycle_idx >= len(active):
             _widget_cycle_idx = 0
         wname, mod = active[_widget_cycle_idx]
+        
+        # Determine remaining height for the widget, keeping bottom pill in mind
+        pill_height = 30
+        widget_h = H - wly - pill_height
+        
         try:
-            mod.draw(hud, 4, wly + 2, W - 8, H - wly - 30, music)
+            # Draw widget with slightly larger margin
+            mod.draw(hud, 10, wly, W - 20, widget_h, music)
         except Exception:
             pass

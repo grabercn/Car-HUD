@@ -47,17 +47,25 @@ def draw(hud, x, y, w, h, music):
     cam_count = cd.get("cam_count", 0)
     size_mb = cd.get("size_mb", 0)
 
+    pygame.draw.rect(s, t["panel"], (x, y, w, h), border_radius=8)
+    pygame.draw.rect(s, t["border_lite"], (x, y, w, h), 1, border_radius=8)
+
+    cy = y + h // 2
+
     # Blinking red dot when recording
     if recording and int(time.time() * 2) % 2 == 0:
-        pygame.draw.circle(s, RED, (x + 8, y + 10), 5)
+        pygame.draw.circle(s, RED, (x + 24, cy), 8)
     else:
-        pygame.draw.circle(s, RED, (x + 8, y + 10), 5, 1)
+        pygame.draw.circle(s, RED, (x + 24, cy), 8, 2)
 
     label = f"REC {cam_count} cam" + ("s" if cam_count > 1 else "")
-    rt = hud.font_sm.render(label, True, t["text_bright"])
-    s.blit(rt, (x + 18, y + 3))
+    rt = hud.font_md.render(label, True, t["text_bright"])
+    
+    # Vertically center text block
+    ty = y + (h - rt.get_height() - 20) // 2
+    s.blit(rt, (x + 48, ty))
 
-    st = hud.font_xs.render(f"{size_mb:.0f} MB", True, t["text_dim"])
-    s.blit(st, (x + 18, y + 20))
+    st = hud.font_sm.render(f"{size_mb:.0f} MB", True, t["text_dim"])
+    s.blit(st, (x + 48, ty + rt.get_height() + 4))
 
     return True

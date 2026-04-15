@@ -16,70 +16,74 @@ def draw(hud, stats, music):
     t = hud.t
     now = datetime.datetime.now()
 
-    # Time — large and centered
+    # Time — massive and centered (Apple style)
     time_str = now.strftime("%I:%M")
     ampm = now.strftime("%p")
 
-    tx_full_w = hud.font_xl.size(time_str)[0] + hud.font_md.size(ampm)[0] + 6
+    # Use XXL font for time
+    tx_full_w = hud.font_xxl.size(time_str)[0] + hud.font_md.size(ampm)[0] + 6
     tx = (W - tx_full_w) // 2
-    hud.draw_glow_text(time_str, hud.font_xl, t["primary"], (tx, 4))
+    hud.draw_glow_text(time_str, hud.font_xxl, t["text_bright"], (tx, 8))
     hud.draw_glow_text(ampm, hud.font_md, t["accent"],
-                       (tx + hud.font_xl.size(time_str)[0] + 6, 20))
+                       (tx + hud.font_xxl.size(time_str)[0] + 6, 40))
 
     date_str = now.strftime("%A, %B %d").upper()
     hud.draw_glow_text(date_str, hud.font_sm, t["text_med"],
-                       ((W - hud.font_sm.size(date_str)[0]) // 2, 44))
+                       ((W - hud.font_sm.size(date_str)[0]) // 2, 75))
 
-    dy = 62
-    pygame.draw.line(s, t["border_lite"], (10, dy), (W - 10, dy))
-
-    # System bars
-    ry = dy + 8
+    # Sleek minimal system bars
+    ry = 100
     hw = W // 2 - 20
     pad = 10
 
     temp = stats.get("cpu_temp", 0)
     tc = t["primary"] if temp < 60 else AMBER if temp < 75 else RED
-    hud.draw_hbar(pad, ry + 16, hw, 12, temp / 85, tc, "CPU", f"{temp:.0f}°C")
+    hud.draw_hbar(pad, ry, hw, 4, temp / 85, tc, "CPU", f"{temp:.0f}°C")
 
     mp = stats.get("mem_used_pct", 0)
     mc = t["primary"] if mp < 70 else AMBER if mp < 85 else RED
-    hud.draw_hbar(W // 2 + pad, ry + 16, hw, 12, mp / 100, mc, "MEM", f"{mp}%")
+    hud.draw_hbar(W // 2 + pad, ry, hw, 4, mp / 100, mc, "MEM", f"{mp}%")
 
-    # Widget area — below system bars, above status strip
-    wy = ry + 42
+    # Widget area — take up the rest of the screen
+    wy = ry + 25
     pygame.draw.line(s, t["border_lite"], (10, wy), (W - 10, wy))
-    strip_y = H - 26
+    
+    # Status strip is now floating at bottom right, so we can use almost all height
+    strip_y = H - 24
 
-    # Get active widgets and stack them (up to 2)
+    # Get active widgets and stack them
     active = widgets.get_active(hud, music)
     shown = 0
-
-    for wname, mod in active:
-        if shown >= 2:
-            break
-        widget_y = wy + 3 + shown * 60
-        if widget_y + 55 > strip_y:
-            break
-        try:
-            result = mod.draw(hud, 4, widget_y, W - 8, 55, music)
-            if result:
-                shown += 1
-        except Exception:
-            pass
+    avail_h = strip_y - wy - 4
+    
+    if active:
+        # Give more height if only 1 widget, or split it if 2
+        widget_h = avail_h if len(active) == 1 else (avail_h // 2 - 4)
+        
+        for wname, mod in active:
+            if shown >= 2:
+                break
+            widget_y = wy + 4 + shown * (widget_h + 8)
+            if widget_y + widget_h > H:
+                break
+            try:
+                result = mod.draw(hud, 10, widget_y, W - 20, widget_h, music)
+                if result:
+                    shown += 1
+            except Exception:
+                pass
 
     # If no widgets, show logo
     if shown == 0:
-        avail_h = strip_y - wy - 4
         if hud.honda_logo:
-            target_h = min(55, avail_h - 4)
+            target_h = min(80, avail_h - 20)
             logo = hud.honda_logo
             scale = target_h / logo.get_height()
             logo = pygame.transform.smoothscale(
                 logo, (int(logo.get_width() * scale), target_h))
             lx = (W - logo.get_width()) // 2
-            logo_y = wy + (avail_h - target_h) // 2 + 2
+            logo_y = wy + (avail_h - target_h) // 2
             s.blit(logo, (lx, logo_y))
         else:
-            ht = hud.font_sm.render("Car-HUD", True, t["primary_dim"])
-            s.blit(ht, ((W - ht.get_width()) // 2, wy + 20))
+            ht = hud.font_lg.render("Car-HUD", True, t["primary_dim"])
+            s.blit(ht, ((W - ht.get_width()) // 2, wy + avail_h // 2 - 20))
