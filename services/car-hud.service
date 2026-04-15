@@ -12,6 +12,7 @@ Environment=SDL_VIDEODRIVER=kmsdrm
 Environment=SDL_FBDEV=/dev/fb0
 ExecStartPre=-/bin/sh -c "setterm --clear all --cursor off > /dev/tty1 2>/dev/null"
 ExecStartPre=-/usr/bin/timedatectl set-ntp true
+ExecStartPre=-/usr/bin/amixer -c 0 sset PCM 100%
 ExecStart=/usr/bin/python3 -W ignore -u /home/chrismslist/car-hud/hud.py
 Restart=always
 RestartSec=2

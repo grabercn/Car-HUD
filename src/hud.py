@@ -633,7 +633,7 @@ class CarHUD:
         else:
             oc = OFF
 
-        # PHN — cached, checked every 5 seconds (bluetoothctl is SLOW)
+        # PHN — check for PHONE connection (not OBD adapter), cached 5s
         music = self.get_music_data()
         if not hasattr(self, '_bt_cache_time'):
             self._bt_cache_time = 0
@@ -642,11 +642,26 @@ class CarHUD:
             self._bt_cache_time = now_t
             try:
                 import subprocess as _sp
-                bt_info = _sp.run(["bluetoothctl", "info"], capture_output=True, text=True, timeout=2)
-                if "Connected: yes" in bt_info.stdout:
+                r = _sp.run(["bluetoothctl", "devices", "Connected"],
+                            capture_output=True, text=True, timeout=3)
+                phone_found = False
+                for line in r.stdout.splitlines():
+                    parts = line.split(" ", 2)
+                    if len(parts) < 2:
+                        continue
+                    name = parts[2] if len(parts) > 2 else ""
+                    if any(x in name.lower() for x in ["vlink", "obd", "elm", "icar"]):
+                        continue
+                    info = _sp.run(["bluetoothctl", "info", parts[1]],
+                                   capture_output=True, text=True, timeout=2)
+                    if "Icon: phone" in info.stdout:
+                        phone_found = True
+                        break
+                if phone_found:
                     self._bt_state = "connected"
                 else:
-                    bt_state = _sp.run(["bluetoothctl", "show"], capture_output=True, text=True, timeout=2)
+                    bt_state = _sp.run(["bluetoothctl", "show"],
+                                       capture_output=True, text=True, timeout=2)
                     self._bt_state = "on" if "Powered: yes" in bt_state.stdout else "off"
             except Exception:
                 pass

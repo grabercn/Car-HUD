@@ -79,6 +79,19 @@ class BleOBD:
         return self.response.replace(">", "").strip()
 
     async def find_adapter(self):
+        # First try saved address (skip scan entirely — much faster)
+        saved = self._load_saved_addr()
+        if saved:
+            log(f"Trying saved OBD address: {saved}")
+            try:
+                async with BleakClient(saved, timeout=5) as test:
+                    if test.is_connected:
+                        log(f"Connected to saved adapter: {saved}")
+                        return saved
+            except Exception:
+                log("Saved address failed, scanning...")
+
+        # BLE scan
         log("Scanning BLE for OBD adapter...")
         devices = await BleakScanner.discover(timeout=10, return_adv=True)
         for addr, (dev, adv) in devices.items():
@@ -86,8 +99,40 @@ class BleOBD:
             for obd_name in OBD_NAMES:
                 if obd_name in name:
                     log(f"Found: {dev.name} ({addr}) RSSI={adv.rssi}")
+                    self._save_addr(addr)
                     return addr
+
+        # Last resort: check if adapter is paired via classic BT
+        try:
+            import subprocess
+            r = subprocess.run(["bluetoothctl", "devices", "Paired"],
+                               capture_output=True, text=True, timeout=5)
+            for line in r.stdout.splitlines():
+                for obd_name in OBD_NAMES:
+                    if obd_name in line.lower():
+                        mac = line.split()[1] if len(line.split()) > 1 else ""
+                        if mac:
+                            log(f"Found paired OBD: {mac}")
+                            self._save_addr(mac)
+                            return mac
+        except Exception:
+            pass
+
         return None
+
+    def _load_saved_addr(self):
+        try:
+            with open("/home/chrismslist/car-hud/.obd_adapter") as f:
+                return f.read().strip()
+        except Exception:
+            return None
+
+    def _save_addr(self, addr):
+        try:
+            with open("/home/chrismslist/car-hud/.obd_adapter", "w") as f:
+                f.write(addr)
+        except Exception:
+            pass
 
     def parse_group_response(self, response, pids):
         """Parse multi-PID response: '41 0C 1A F8 0D 00' -> {'RPM': ..., 'SPEED': ...}"""

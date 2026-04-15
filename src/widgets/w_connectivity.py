@@ -29,19 +29,29 @@ def _check_bt():
     if now - _bt_cache["last_check"] < 5:
         return _bt_cache["connected"]
     _bt_cache["last_check"] = now
+    _bt_cache["connected"] = False
     try:
-        bt = subprocess.run(["bluetoothctl", "info"],
-                            capture_output=True, text=True, timeout=3)
-        if "Connected: yes" in bt.stdout:
-            _bt_cache["connected"] = True
-            for line in bt.stdout.splitlines():
-                if "Name:" in line:
-                    _bt_cache["name"] = line.split("Name:")[1].strip()
-                    break
-        else:
-            _bt_cache["connected"] = False
+        # Check all connected devices, find a phone (not OBD adapter)
+        r = subprocess.run(["bluetoothctl", "devices", "Connected"],
+                           capture_output=True, text=True, timeout=3)
+        for line in r.stdout.splitlines():
+            parts = line.split(" ", 2)
+            if len(parts) < 3:
+                continue
+            mac = parts[1]
+            name = parts[2] if len(parts) > 2 else ""
+            # Skip OBD adapters
+            if any(x in name.lower() for x in ["vlink", "obd", "elm", "icar", "vgate"]):
+                continue
+            # Check if it's a phone
+            info = subprocess.run(["bluetoothctl", "info", mac],
+                                  capture_output=True, text=True, timeout=2)
+            if "Icon: phone" in info.stdout:
+                _bt_cache["connected"] = True
+                _bt_cache["name"] = name
+                break
     except Exception:
-        _bt_cache["connected"] = False
+        pass
     return _bt_cache["connected"]
 
 
