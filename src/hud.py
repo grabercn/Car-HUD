@@ -1390,22 +1390,6 @@ class CarHUD:
 if __name__ == "__main__":
     hud = CarHUD()
     hud.run()
-me() - voice_tr.get("time", 0)
-                    if age < 3:
-                        max_c = self.width // 7
-                        if len(text) > max_c:
-                            text = text[-max_c:]
-                        color = self.t["text_dim"] if "partial" in voice_tr else self.t["text_med"]
-                        tt = self.font_xs.render(text, True, color)
-                        self.surf.blit(tt, (16, self.height - 40))
-
-            if self.show_terminal:
-                self.draw_terminal_overlay()
-
-            self.present()
-            self.clock_t.tick(30)
-
-        pygame.quit()
 
 
 if __name__ == "__main__":
