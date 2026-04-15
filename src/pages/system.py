@@ -12,7 +12,7 @@ RED = (220, 45, 45)
 _rotate_time = 0
 _rotate_offset = 0
 _fade_frame = 0  # 0=no fade, >0 fading in
-_FADE_FRAMES = 6
+_FADE_FRAMES = 15
 
 
 def draw(hud, stats, music):
@@ -91,9 +91,10 @@ def draw(hud, stats, music):
         except Exception:
             hud.surf = old_surf
 
-    # Apply fade alpha
+    # Apply smooth ease-in fade
     if _fade_frame > 0:
-        alpha = int(255 * (1 - _fade_frame / _FADE_FRAMES))
-        widget_surf.set_alpha(alpha)
+        t_pct = 1 - _fade_frame / _FADE_FRAMES  # 0→1
+        eased = t_pct * t_pct * (3 - 2 * t_pct)  # smoothstep
+        widget_surf.set_alpha(int(255 * eased))
 
     s.blit(widget_surf, (6, wy))

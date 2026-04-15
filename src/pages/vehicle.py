@@ -13,7 +13,7 @@ RED = (220, 45, 45)
 _widget_cycle_time = 0
 _widget_cycle_idx = 0
 _fade_frame = 0
-_FADE_FRAMES = 6
+_FADE_FRAMES = 15
 
 
 def draw(hud, obd, music):
@@ -149,7 +149,9 @@ def draw(hud, obd, music):
             hud.surf = old_surf
 
             if _fade_frame > 0:
-                ws.set_alpha(int(255 * (1 - _fade_frame / _FADE_FRAMES)))
+                t_pct = 1 - _fade_frame / _FADE_FRAMES
+                eased = t_pct * t_pct * (3 - 2 * t_pct)  # smoothstep
+                ws.set_alpha(int(255 * eased))
             s.blit(ws, (6, wly))
         except Exception:
             hud.surf = old_surf if 'old_surf' in dir() else s
