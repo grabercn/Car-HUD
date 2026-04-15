@@ -22,7 +22,7 @@ def draw(hud, obd, music):
     now = datetime.datetime.now()
 
     rpm = vd.get("RPM", 0)
-    speed = vd.get("SPEED", 0) * 0.621371
+    speed_raw = vd.get("SPEED", 0) * 0.621371
     load = vd.get("ENGINE_LOAD", 0)
     throttle = vd.get("THROTTLE_POS", 0)
     fuel = vd.get("FUEL_LEVEL", 0)
@@ -31,6 +31,19 @@ def draw(hud, obd, music):
     volts = vd.get("CONTROL_MODULE_VOLTAGE", 0)
     intake = vd.get("INTAKE_TEMP", 0)
     ev = rpm < 100
+
+    # Velocity prediction — extrapolate speed between OBD readings
+    if not hasattr(draw, '_prev_speed'):
+        draw._prev_speed = 0
+        draw._speed_rate = 0
+        draw._prev_t = now_t
+    dt = now_t - draw._prev_t
+    if dt > 0 and dt < 1:
+        draw._speed_rate = (speed_raw - draw._prev_speed) / dt  # mph/sec
+    draw._prev_speed = speed_raw
+    draw._prev_t = now_t
+    # Predict ahead by half a frame interval
+    speed = max(0, speed_raw + draw._speed_rate * 0.03)
 
     # Warnings
     wy_off = 0

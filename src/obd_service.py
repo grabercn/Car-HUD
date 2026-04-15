@@ -154,27 +154,47 @@ class BleOBD:
                     write_obd({"connected": True, "status": "connected", "adapter": "Vgate iCar Pro 2S (BLE)",
                                "data": {}, "warnings": [], "dtcs": []})
 
-                    # Main read loop
+                    # Main read loop — prioritize speed/RPM for instant response
                     data = {}
                     last_dtc_check = 0
-                    
+                    cycle = 0
+
                     while client.is_connected:
                         warnings = []
-                        
-                        # Read PID groups
-                        for group in PID_GROUPS:
-                            cmd = "".join(group)
+
+                        # FAST group: RPM, Speed, Load, Throttle — EVERY cycle
+                        fast_group = PID_GROUPS[0]
+                        cmd = "".join(fast_group)
+                        resp = await self.send(client, cmd, 3)
+                        if "NO DATA" in resp or "ERROR" in resp or not resp:
+                            for pid in fast_group:
+                                resp = await self.send(client, pid, 2)
+                                data.update(self.parse_group_response(resp, [pid]))
+                        else:
+                            data.update(self.parse_group_response(resp, fast_group))
+
+                        # Write IMMEDIATELY after fast group — don't wait for slow
+                        write_obd({
+                            "connected": True,
+                            "status": "connected",
+                            "adapter": "Vgate iCar Pro 2S (BLE)",
+                            "data": dict(data),
+                            "warnings": warnings,
+                            "dtcs": [],
+                            "timestamp": time.time()
+                        })
+
+                        # SLOW group: Fuel, Battery, Temps — every 3rd cycle
+                        if cycle % 3 == 0 and len(PID_GROUPS) > 1:
+                            slow_group = PID_GROUPS[1]
+                            cmd = "".join(slow_group)
                             resp = await self.send(client, cmd, 3)
-                            
                             if "NO DATA" in resp or "ERROR" in resp or not resp:
-                                # Fallback to sequential if grouped fails
-                                for pid in group:
+                                for pid in slow_group:
                                     resp = await self.send(client, pid, 2)
-                                    parsed = self.parse_group_response(resp, [pid])
-                                    data.update(parsed)
+                                    data.update(self.parse_group_response(resp, [pid]))
                             else:
-                                parsed = self.parse_group_response(resp, group)
-                                data.update(parsed)
+                                data.update(self.parse_group_response(resp, slow_group))
 
                         # Threshold checks
                         cool = data.get("COOLANT_TEMP", 0)
@@ -184,31 +204,31 @@ class BleOBD:
                         volts = data.get("CONTROL_MODULE_VOLTAGE", 0)
                         if volts < 11.5: warnings.append(f"LOW VOLTS {volts:.1f}V")
 
-                        # Periodic DTC check (every 60s)
+                        # DTC check every 60s
                         dtcs = []
                         if time.time() - last_dtc_check > 60:
                             last_dtc_check = time.time()
                             resp = await self.send(client, "03", 5)
                             if resp and "43" in resp:
-                                # 43 01 33 -> P0133
                                 try:
                                     raw = "".join(resp.split()).upper()
                                     if len(raw) >= 6:
-                                        code = raw[2:6]
-                                        dtcs.append(f"P{code}")
+                                        dtcs.append(f"P{raw[2:6]}")
                                 except Exception: pass
 
+                        # Final write with all data + warnings + dtcs
                         write_obd({
                             "connected": True,
                             "status": "connected",
                             "adapter": "Vgate iCar Pro 2S (BLE)",
-                            "data": data,
+                            "data": dict(data),
                             "warnings": warnings,
                             "dtcs": dtcs,
                             "timestamp": time.time()
                         })
 
-                        await asyncio.sleep(0.1) # Fast loop
+                        cycle += 1
+                        await asyncio.sleep(0.05)  # 50ms between cycles = ~20Hz
 
             except Exception as e:
                 log(f"BLE error: {e}")

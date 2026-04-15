@@ -299,22 +299,35 @@ class CarHUD:
         self._build_tinted_logo()
 
     def get_obd_data(self):
+        """Read OBD data — skip re-parse if file hasn't changed."""
+        obd_path = "/tmp/car-hud-obd-data"
         try:
-            with open("/tmp/car-hud-obd-data") as f:
+            mt = os.path.getmtime(obd_path)
+            if hasattr(self, '_obd_cache_mt') and mt == self._obd_cache_mt:
+                return self._obd_cache  # file unchanged, reuse
+            with open(obd_path) as f:
                 data = json.load(f)
-                if time.time() - data.get("timestamp", 0) < 10:
-                    return data
+            if time.time() - data.get("timestamp", 0) < 10:
+                self._obd_cache = data
+                self._obd_cache_mt = mt
+                return data
         except Exception:
             pass
         return {"connected": False, "status": "offline", "data": {},
                 "warnings": [], "dtcs": []}
 
     def get_music_data(self):
+        music_path = "/tmp/car-hud-music-data"
         try:
-            with open("/tmp/car-hud-music-data") as f:
+            mt = os.path.getmtime(music_path)
+            if hasattr(self, '_music_cache_mt') and mt == self._music_cache_mt:
+                return self._music_cache
+            with open(music_path) as f:
                 data = json.load(f)
-                if time.time() - data.get("timestamp", 0) < 30:
-                    return data
+            if time.time() - data.get("timestamp", 0) < 30:
+                self._music_cache = data
+                self._music_cache_mt = mt
+                return data
         except Exception:
             pass
         return {"playing": False}
@@ -1285,16 +1298,22 @@ class CarHUD:
             obd = self.get_obd_data()
             music = self.get_music_data()
 
-            # Smooth OBD data for animations
-            _FAST_KEYS = {"RPM", "SPEED", "ENGINE_LOAD", "THROTTLE_POS"}
+            # Smooth OBD data — near-instant for driving-critical values
             target_data = obd.get("data", {})
             sd = self.smooth_data
             for k, v in target_data.items():
                 if k not in sd:
                     sd[k] = v
+                elif k == "SPEED":
+                    sd[k] += (v - sd[k]) * 0.85  # ~2 frames to reach target
+                elif k == "RPM":
+                    sd[k] += (v - sd[k]) * 0.8   # ~2-3 frames
+                elif k in ("ENGINE_LOAD", "THROTTLE_POS"):
+                    sd[k] += (v - sd[k]) * 0.7   # ~3 frames
+                elif k in ("FUEL_LEVEL", "HYBRID_BATTERY_REMAINING"):
+                    sd[k] += (v - sd[k]) * 0.15  # slow — fuel doesn't jump
                 else:
-                    f = 0.3 if k in _FAST_KEYS else 0.08
-                    sd[k] += (v - sd[k]) * f
+                    sd[k] += (v - sd[k]) * 0.1   # temps, voltage — gradual
 
             # Reload theme from file every 2 seconds (for voice commands)
             theme_check_timer += 1
