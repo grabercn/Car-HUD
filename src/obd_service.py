@@ -79,6 +79,22 @@ class BleOBD:
         return self.response.replace(">", "").strip()
 
     async def find_adapter(self):
+        # Disconnect any classic BT to OBD adapter (blocks BLE)
+        try:
+            import subprocess
+            r = subprocess.run(["bluetoothctl", "devices", "Connected"],
+                               capture_output=True, text=True, timeout=3)
+            for line in r.stdout.splitlines():
+                if any(x in line.lower() for x in OBD_NAMES):
+                    mac = line.split()[1] if len(line.split()) > 1 else ""
+                    if mac:
+                        subprocess.run(["bluetoothctl", "disconnect", mac],
+                                       capture_output=True, timeout=5)
+                        log(f"Disconnected classic BT from OBD: {mac}")
+                        await asyncio.sleep(2)
+        except Exception:
+            pass
+
         # First try saved address (skip scan entirely — much faster)
         saved = self._load_saved_addr()
         if saved:
