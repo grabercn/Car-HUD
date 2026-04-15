@@ -199,8 +199,8 @@ def main():
                 track = item.get("name", "Unknown")
                 artists = ", ".join(a["name"] for a in item.get("artists", []))
                 album = item.get("album", {}).get("name", "")
-                duration = item.get("duration_ms", 0) / 1000
-                progress = current.get("progress_ms", 0) / 1000
+                duration = max(0, (item.get("duration_ms") or 0)) / 1000
+                progress = max(0, (current.get("progress_ms") or 0)) / 1000
                 device = current.get("device", {}).get("name", "")
                 volume = current.get("device", {}).get("volume_percent", 0)
                 shuffle = current.get("shuffle_state", False)

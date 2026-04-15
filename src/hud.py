@@ -21,6 +21,7 @@ _headless = False
 
 import pygame
 from pygame.locals import *
+from pages import vehicle as vehicle_page, system as system_page
 
 # ── Theme Presets (2014 Car-HUD style) ──
 # Themes modeled on 2014 Car-HUD iMID color options
@@ -438,186 +439,10 @@ class CarHUD:
             s.blit(vt, (x + w - vt.get_width(), y - vt.get_height() - 1))
 
     def draw_vehicle_page(self, obd, music):
-        """Car-HUD Stock-style Instrument Cluster.
-        Large central speedo, side-mounted charge and fuel clusters.
-        """
-        W, H = self.width, self.height
-        s = self.surf
-        t = self.t
-        vd = self.smooth_data
-        now = datetime.datetime.now()
-
-        # Data extraction
-        rpm = vd.get("RPM", 0)
-        speed = vd.get("SPEED", 0) * 0.621371
-        load = vd.get("ENGINE_LOAD", 0)
-        throttle = vd.get("THROTTLE_POS", 0)
-        fuel = vd.get("FUEL_LEVEL", 0)
-        hv = vd.get("HYBRID_BATTERY_REMAINING", 0)
-        cool = vd.get("COOLANT_TEMP", 0)
-        volts = vd.get("CONTROL_MODULE_VOLTAGE", 0)
-        intake = vd.get("INTAKE_TEMP", 0)
-        ev = rpm < 100
-
-        # Warnings and DTCs (at the very top)
-        wy = 0
-        all_warnings = (obd.get("warnings") or [])[:]
-        for dtc in (obd.get("dtcs") or []):
-            all_warnings.append(f"ENGINE CODE: {dtc}")
-        for wt in all_warnings[:3]:
-            txt = self.font_sm.render(wt, True, RED)
-            pygame.draw.rect(s, (25, 5, 5), (0, wy, W, txt.get_height() + 4))
-            s.blit(txt, ((W - txt.get_width()) // 2, wy + 2))
-            wy += txt.get_height() + 4
-
-        # ── Central Cluster: Speedo ──
-        # Large central arc — pushed up for 2.5" TFT
-        cx, cy = W // 2, 148
-        r_speed = 115
-        sp_pct = min(speed / 140, 1.0)
-        # Main speed arc - from 1.15*pi to -0.15*pi
-        self.draw_arc_gauge(cx, cy, r_speed, 14, sp_pct, t["primary"], 
-                             start=math.pi*1.15, end=-math.pi*0.15, ticks=True)
-        
-        # RPM as thin inner ring
-        rpm_pct = min(rpm / 7000, 1.0)
-        rc = t["primary_dim"] if rpm < 3000 else AMBER if rpm < 5500 else RED
-        self.draw_arc_gauge(cx, cy, r_speed - 18, 4, rpm_pct, rc,
-                             start=math.pi*1.15, end=-math.pi*0.15)
-
-        # Speed Digits - using draw_glow_text for depth
-        sp_str = f"{int(speed)}"
-        sp_pos = (cx - self.font_xxl.size(sp_str)[0]//2, cy - 65)
-        self.draw_glow_text(sp_str, self.font_xxl, t["text_bright"], sp_pos)
-        
-        unit_str = "MPH"
-        unit_pos = (cx - self.font_md.size(unit_str)[0]//2, cy - 2)
-        self.draw_glow_text(unit_str, self.font_md, t["text_dim"], unit_pos)
-
-        # EV/GAS status badge (below speed)
-        mc = GREEN if ev else t["primary"]
-        badge_w, badge_h = 56, 22
-        pygame.draw.rect(s, (0, 0, 0, 100), (cx - badge_w//2 - 1, cy + 28, badge_w + 2, badge_h + 2), border_radius=4)
-        pygame.draw.rect(s, mc, (cx - badge_w//2, cy + 29, badge_w, badge_h), border_radius=4)
-        ml = self.font_sm.render("EV" if ev else "GAS", True, (0, 0, 0))
-        s.blit(ml, (cx - ml.get_width()//2, cy + 29 + (badge_h - ml.get_height())//2))
-
-        # ── Left Cluster: CHG/PWR ──
-        lx, ly = 65, 148
-        lr = 70
-        if ev:
-            # Only Power when EV
-            pwr_pct = min(throttle / 80, 1.0)
-            self.draw_arc_gauge(lx, ly, lr, 10, pwr_pct, GREEN, 
-                                 start=math.pi*1.3, end=math.pi*0.7, ticks=True)
-        else:
-            # Hybrid mode: show Load and CHG
-            load_pct = min(load / 100, 1.0)
-            pc = t["primary"] if load_pct < 0.7 else AMBER if load_pct < 0.9 else RED
-            self.draw_arc_gauge(lx, ly, lr, 10, load_pct, pc, 
-                                 start=math.pi, end=math.pi*0.7, ticks=True)
-            # CHG (below 9 o'clock)
-            chg_pct = 0.3 if (throttle < 5 and rpm > 800) else 0.0
-            self.draw_arc_gauge(lx, ly, lr, 10, chg_pct, GREEN, 
-                                 start=math.pi, end=math.pi*1.3)
-        
-        self.draw_glow_text("PWR", self.font_xs, t["text_dim"], (lx - 12, ly - lr - 14))
-        self.draw_glow_text("CHG", self.font_xs, GREEN, (lx - 12, ly + lr + 4))
-
-        # ── Right Cluster: Fuel & Battery ──
-        rx, ry = W - 65, 148
-        rr = 70
-        # Fuel Outer
-        fc = GREEN if fuel > 20 else AMBER if fuel > 10 else RED
-        self.draw_arc_gauge(rx, ry, rr, 10, fuel/100, fc,
-                             start=math.pi*0.3, end=-math.pi*0.3, ticks=True)
-        # HV Battery Inner
-        bc = GREEN if hv > 30 else AMBER if hv > 15 else RED
-        self.draw_arc_gauge(rx, ry, rr - 18, 6, hv/100, bc,
-                             start=math.pi*0.3, end=-math.pi*0.3)
-
-        self.draw_glow_text("FUEL", self.font_xs, t["text_dim"], (rx - 15, ry - rr - 14))
-        self.draw_glow_text("BATT", self.font_xs, t["text_dim"], (rx - 15, ry + rr + 4))
-
-        # ── Top strip info ──
-        ty = 6 + wy
-        self.draw_glow_text(now.strftime("%I:%M"), self.font_md, t["text_bright"], (12, ty))
-        vl_str = f"{volts:.1f}V"
-        self.draw_glow_text(vl_str, self.font_md, t["text_med"], (W - self.font_md.size(vl_str)[0] - 12, ty))
-
-        # ── Lower Data (between clusters) ──
-        # Ambient/Intake temp
-        self.draw_glow_text(f"AIR {intake:.0f}C", self.font_xs, t["text_dim"], (cx + 55, cy + 55))
-        # Coolant
-        self.draw_glow_text(f"H2O {cool:.0f}C", self.font_xs, t["text_med"], (cx - 55 - self.font_xs.size(f"H2O {cool:.0f}C")[0], cy + 55))
-
-        # Range
-        fuel_mi = int(fuel / 100 * 12.8 * 40)
-        ev_mi = int(hv / 100 * 15)
-        range_str = f"EST RANGE: {fuel_mi + ev_mi} MI"
-        range_pos = ((W - self.font_sm.size(range_str)[0])//2, H - 54)
-        self.draw_glow_text(range_str, self.font_sm, t["text_bright"], range_pos)
-
-        ly = H - 34
-        pygame.draw.line(s, t["border_lite"], (10, ly), (W - 10, ly))
-        self.draw_lower_section(ly + 2, music, vd)
+        vehicle_page.draw(self, obd, music)
 
     def draw_system_page(self, stats, music):
-        W, H = self.width, self.height
-        s = self.surf
-        t = self.t
-        now = datetime.datetime.now()
-
-
-        # Time — large and centered
-        time_str = now.strftime("%I:%M")
-        ampm = now.strftime("%p")
-
-        tx_full_w = self.font_xl.size(time_str)[0] + self.font_md.size(ampm)[0] + 6
-        tx = (W - tx_full_w) // 2
-        self.draw_glow_text(time_str, self.font_xl, t["primary"], (tx, 4))
-        self.draw_glow_text(ampm, self.font_md, t["accent"], (tx + self.font_xl.size(time_str)[0] + 6, 20))
-
-        date_str = now.strftime("%A, %B %d").upper()
-        self.draw_glow_text(date_str, self.font_sm, t["text_med"], ((W - self.font_sm.size(date_str)[0]) // 2, 44))
-
-        dy = 62
-        pygame.draw.line(s, t["border_lite"], (10, dy), (W - 10, dy))
-
-        # System bars — wider, better spaced
-        ry = dy + 8
-        hw = W // 2 - 20
-        pad = 10
-
-        temp = stats.get("cpu_temp", 0)
-        tc = t["primary"] if temp < 60 else AMBER if temp < 75 else RED
-        self.draw_hbar(pad, ry + 16, hw, 12, temp/85, tc, "CPU", f"{temp:.0f}°C")
-
-        mp = stats.get("mem_used_pct", 0)
-        mc = t["primary"] if mp < 70 else AMBER if mp < 85 else RED
-        self.draw_hbar(W//2 + pad, ry + 16, hw, 12, mp/100, mc, "MEM", f"{mp}%")
-
-        # Lower: Honda logo or music
-        ly = ry + 42
-        pygame.draw.line(s, t["border_lite"], (10, ly), (W - 10, ly))
-
-        if music.get("playing"):
-            self.draw_lower_section(ly + 3, music, None)
-        elif self.honda_logo:
-            # Center Honda H badge exactly between divider and status strip
-            strip_y = H - 26
-            avail_h = strip_y - ly - 4
-            target_h = min(55, avail_h - 4)  # bigger, with margin
-            logo = self.honda_logo
-            scale = target_h / logo.get_height()
-            logo = pygame.transform.smoothscale(
-                logo, (int(logo.get_width() * scale), target_h))
-            lx = (W - logo.get_width()) // 2
-            logo_y = ly + (avail_h - target_h) // 2 + 2
-            s.blit(logo, (lx, logo_y))
-        else:
-            ht = self.font_sm.render("Car-HUD", True, t["primary_dim"])
-            s.blit(ht, ((W - ht.get_width()) // 2, ly + 20))
+        system_page.draw(self, stats, music)
 
     def draw_lower_section(self, y, music, vd):
         W = self.width
@@ -648,47 +473,53 @@ class CarHUD:
                 pass
 
             if not art_loaded:
-                # Fallback: note icon
+                # Fallback: centered music note icon in bordered square
                 pygame.draw.rect(s, t["border"], (art_x, y, art_size, art_size), border_radius=4)
-                pygame.draw.circle(s, t["primary"], (art_x + 12, y + 22), 5)
-                pygame.draw.line(s, t["primary"], (art_x + 17, y + 22), (art_x + 17, y + 8), 2)
+                ncx, ncy = art_x + art_size // 2, y + art_size // 2
+                # Note head
+                pygame.draw.ellipse(s, t["primary"], (ncx - 8, ncy + 2, 10, 8))
+                # Note stem
+                pygame.draw.line(s, t["primary"], (ncx + 1, ncy + 5), (ncx + 1, ncy - 14), 2)
+                # Note flag
+                pygame.draw.line(s, t["primary"], (ncx + 1, ncy - 14), (ncx + 7, ncy - 10), 2)
 
             # Track info (right of art)
             tx = art_x + art_size + 6
             tw = W - tx - 4
-            max_c = tw // 6
+            max_c = tw // 7
 
             # Use CJK font if text contains non-ASCII
             has_cjk = any(ord(c) > 0x2E80 for c in track)
             track_font = self.font_cjk if has_cjk and self.font_cjk else self.font_md
             tt = track_font.render(track[:max_c], True, t["text_bright"])
-            s.blit(tt, (tx, y + 1))
+            s.blit(tt, (tx, y))
 
             has_cjk_a = any(ord(c) > 0x2E80 for c in artist)
-            artist_font = self.font_cjk_sm if has_cjk_a and hasattr(self, "font_cjk_sm") and self.font_cjk_sm else self.font_xs
+            artist_font = self.font_cjk_sm if has_cjk_a and hasattr(self, "font_cjk_sm") and self.font_cjk_sm else self.font_sm
             at = artist_font.render(artist[:max_c], True, t["text_med"])
-            s.blit(at, (tx, y + 14))
-
-            # Device source
-            dev_name = music.get("device", "")
-            if dev_name:
-                dt = self.font_xs.render(dev_name, True, t["text_dim"])
-                s.blit(dt, (tx + tw - dt.get_width(), y + 2))
+            s.blit(at, (tx, y + 18))
 
             # Progress bar
-            prog = music.get("progress", 0)
-            dur = music.get("duration", 0)
+            prog = max(0, music.get("progress", 0))
+            dur = max(0, music.get("duration", 0))
             if dur > 0:
-                pbar_y = y + 27
-                pygame.draw.rect(s, t["border"], (tx, pbar_y, tw, 3), border_radius=1)
+                pbar_y = y + 36
+                pygame.draw.rect(s, t["border"], (tx, pbar_y, tw, 4), border_radius=2)
                 fw = int(tw * min(prog / dur, 1))
                 if fw > 0:
-                    pygame.draw.rect(s, t["primary"], (tx, pbar_y, fw, 3), border_radius=1)
-                # Time
+                    pygame.draw.rect(s, t["primary"], (tx, pbar_y, fw, 4), border_radius=2)
+
+                # Time — bigger font, left aligned
                 prog_m, prog_s = int(prog) // 60, int(prog) % 60
                 dur_m, dur_s = int(dur) // 60, int(dur) % 60
-                time_t = self.font_xs.render(f"{prog_m}:{prog_s:02d}/{dur_m}:{dur_s:02d}", True, t["text_dim"])
-                s.blit(time_t, (tx + tw - time_t.get_width(), pbar_y - 11))
+                time_t = self.font_sm.render(f"{prog_m}:{prog_s:02d} / {dur_m}:{dur_s:02d}", True, t["text_med"])
+                s.blit(time_t, (tx, pbar_y + 6))
+
+            # Device source — bigger, right aligned below progress
+            dev_name = music.get("device", "")
+            if dev_name:
+                dt = self.font_sm.render(dev_name, True, t["text_dim"])
+                s.blit(dt, (tx + tw - dt.get_width(), pbar_y + 6 if dur > 0 else y + 36))
 
         elif music.get("paired"):
             phone = music.get("phone", "Phone")
