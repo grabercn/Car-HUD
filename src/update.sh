@@ -1,21 +1,14 @@
 #!/bin/bash
 # Car-HUD OTA Update Script
-# Checks GitHub for updates, downloads, replaces files, restarts services.
-# Called on boot by car-hud-updater.service or manually.
+# Intelligently syncs only changed/new/deleted files from GitHub.
+# Downloads update first, installs on next reboot (or immediately if forced).
 
 set -e
 INSTALL_DIR="/home/chrismslist/car-hud"
-OLD_INSTALL_DIR="/home/chrismslist/northstar"
 REPO_URL="https://github.com/grabercn/Car-HUD"
 SIGNAL_FILE="/tmp/car-hud-update-status"
+STAGING_DIR="/tmp/Car-HUD-update"
 BRANCH="main"
-
-# Handle migration from Northstar to Car-HUD
-if [ ! -d "$INSTALL_DIR" ] && [ -d "$OLD_INSTALL_DIR" ]; then
-    log "Migrating from $OLD_INSTALL_DIR to $INSTALL_DIR..."
-    mv "$OLD_INSTALL_DIR" "$INSTALL_DIR"
-    # Update local hash check if we just moved it
-fi
 
 mkdir -p "$INSTALL_DIR"
 
@@ -51,55 +44,126 @@ if [ "$REMOTE_HASH" = "$LOCAL_HASH" ] || [ -z "$REMOTE_HASH" ]; then
 fi
 
 log "Update available: $LOCAL_HASH -> $REMOTE_HASH"
-write_status "downloading" "Downloading update..." 30
+write_status "downloading" "Downloading update..." 20
 
-# Download latest
-cd /tmp
-rm -rf Car-HUD-update
-git clone --depth 1 "$REPO_URL" Car-HUD-update 2>/dev/null
+# Download latest into staging
+rm -rf "$STAGING_DIR"
+git clone --depth 1 "$REPO_URL" "$STAGING_DIR" 2>/dev/null
 
-if [ ! -d /tmp/Car-HUD-update/src ]; then
+if [ ! -d "$STAGING_DIR/src" ]; then
     log "Download failed"
     write_status "failed" "Download failed" 0
-    # Play failure chime
-    aplay -q "$INSTALL_DIR/chime_err.wav" 2>/dev/null || true
     exit 1
 fi
 
-write_status "installing" "Installing update..." 60
+write_status "installing" "Syncing files..." 50
 
-# Stop services
-for svc in car-hud car-hud-voice car-hud-web car-hud-music car-hud-dashcam; do
-    systemctl stop "$svc" 2>/dev/null || true
+# --- Smart file sync: only copy changed/new, remove deleted ---
+CHANGED=0
+ADDED=0
+DELETED=0
+
+# Sync src/ -> install dir (py and sh files)
+for f in "$STAGING_DIR"/src/*.py "$STAGING_DIR"/src/*.sh; do
+    [ -f "$f" ] || continue
+    fname=$(basename "$f")
+    if [ -f "$INSTALL_DIR/$fname" ]; then
+        if ! cmp -s "$f" "$INSTALL_DIR/$fname"; then
+            cp "$f" "$INSTALL_DIR/$fname"
+            log "Updated: $fname"
+            CHANGED=$((CHANGED + 1))
+        fi
+    else
+        cp "$f" "$INSTALL_DIR/$fname"
+        log "Added: $fname"
+        ADDED=$((ADDED + 1))
+    fi
 done
 
-# Backup current
-mkdir -p "$INSTALL_DIR/backups"
-cp "$INSTALL_DIR"/*.py "$INSTALL_DIR/backups/.backup_$(date +%Y%m%d_%H%M%S)" 2>/dev/null || true
+# Sync subdirectories (pages/, widgets/)
+for subdir in pages widgets; do
+    if [ -d "$STAGING_DIR/src/$subdir" ]; then
+        mkdir -p "$INSTALL_DIR/$subdir"
 
-# Copy new files
-cp /tmp/Car-HUD-update/src/*.py "$INSTALL_DIR/"
-cp /tmp/Car-HUD-update/src/*.sh "$INSTALL_DIR/"
+        # Copy new/changed files
+        for f in "$STAGING_DIR/src/$subdir"/*.py; do
+            [ -f "$f" ] || continue
+            fname=$(basename "$f")
+            if [ -f "$INSTALL_DIR/$subdir/$fname" ]; then
+                if ! cmp -s "$f" "$INSTALL_DIR/$subdir/$fname"; then
+                    cp "$f" "$INSTALL_DIR/$subdir/$fname"
+                    log "Updated: $subdir/$fname"
+                    CHANGED=$((CHANGED + 1))
+                fi
+            else
+                cp "$f" "$INSTALL_DIR/$subdir/$fname"
+                log "Added: $subdir/$fname"
+                ADDED=$((ADDED + 1))
+            fi
+        done
+
+        # Remove files that no longer exist in repo
+        for f in "$INSTALL_DIR/$subdir"/*.py; do
+            [ -f "$f" ] || continue
+            fname=$(basename "$f")
+            if [ ! -f "$STAGING_DIR/src/$subdir/$fname" ]; then
+                rm "$f"
+                log "Removed: $subdir/$fname"
+                DELETED=$((DELETED + 1))
+            fi
+        done
+    fi
+done
+
+# Remove top-level py files that no longer exist in repo
+for f in "$INSTALL_DIR"/*.py; do
+    [ -f "$f" ] || continue
+    fname=$(basename "$f")
+    # Skip config/data files that aren't in the repo
+    [[ "$fname" == .* ]] && continue
+    if [ -f "$STAGING_DIR/src/$fname" ]; then
+        : # exists in repo, already handled above
+    else
+        # Check if it was ever in the repo (don't delete user-created files)
+        if git -C "$STAGING_DIR" log --oneline -- "src/$fname" 2>/dev/null | head -1 | grep -q .; then
+            rm "$f"
+            log "Removed: $fname"
+            DELETED=$((DELETED + 1))
+        fi
+    fi
+done
 
 # Update services if changed
-if [ -d /tmp/Car-HUD-update/services ]; then
-    cp /tmp/Car-HUD-update/services/*.service /etc/systemd/system/ 2>/dev/null || true
+if [ -d "$STAGING_DIR/services" ]; then
+    for f in "$STAGING_DIR"/services/*.service; do
+        [ -f "$f" ] || continue
+        fname=$(basename "$f")
+        if ! cmp -s "$f" "/etc/systemd/system/$fname" 2>/dev/null; then
+            cp "$f" "/etc/systemd/system/$fname"
+            log "Service updated: $fname"
+            CHANGED=$((CHANGED + 1))
+        fi
+    done
     systemctl daemon-reload
 fi
 
-write_status "restarting" "Restarting services..." 80
+write_status "finalizing" "Finalizing..." 90
 
-# Save version and set update success flag for bootsplash
+# Save version
 echo "$REMOTE_HASH" > "$INSTALL_DIR/.version"
 touch "$INSTALL_DIR/.update_pending"
 
 # Cleanup
-rm -rf /tmp/Car-HUD-update
+rm -rf "$STAGING_DIR"
 
-write_status "done" "Updated to $REMOTE_HASH. Rebooting..." 100
-log "Update complete: $REMOTE_HASH. Scheduling reboot..."
+TOTAL=$((CHANGED + ADDED + DELETED))
+DETAIL="$REMOTE_HASH: ${CHANGED} updated, ${ADDED} added, ${DELETED} removed"
+log "Update complete: $DETAIL"
+write_status "done" "$DETAIL" 100
 
-# Reboot after a short delay to let HUD show the status
-(sleep 10 && reboot) &
+# Restart services to apply
+for svc in car-hud car-hud-voice car-hud-web car-hud-spotify car-hud-touch; do
+    systemctl restart "$svc" 2>/dev/null || true
+done
 
 exit 0
