@@ -18,6 +18,7 @@ def draw(hud, obd, music):
     s = hud.surf
     t = hud.t
     vd = hud.smooth_data
+    now_t = time.time()
     now = datetime.datetime.now()
 
     rpm = vd.get("RPM", 0)
@@ -113,8 +114,6 @@ def draw(hud, obd, music):
         draw._offset = 0.0
         draw._target = 0
         draw._pause_end = now_t + getattr(active[0][1], "view_time", 6)
-
-    now_t = time.time()
 
     # Current widget's view_time for pause
     cur_wi = int(draw._offset / wh) % n if wh > 0 else 0
