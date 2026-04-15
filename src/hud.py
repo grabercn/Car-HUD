@@ -28,75 +28,75 @@ from pygame.locals import *
 THEMES = {
     "blue": {  # Default Car-HUD blue
         "primary":    (0, 180, 255),     # Bright cyan-blue gauges
-        "primary_dim":(0, 70, 120),      # Dim gauge backgrounds
+        "primary_dim":(0, 110, 180),     # Dim gauge backgrounds (brighter for TFT)
         "accent":     (0, 130, 220),     # Secondary elements
         "bg":         (2, 4, 12),        # Deep blue-black
         "panel":      (5, 10, 25),
         "border":     (10, 30, 60),
         "border_lite":(8, 22, 45),
-        "text_bright":(200, 230, 255),   # Blue-white text
-        "text_med":   (80, 130, 190),
-        "text_dim":   (30, 55, 90),
+        "text_bright":(220, 240, 255),   # Blue-white text
+        "text_med":   (140, 190, 240),   # Boosted for 2.5" TFT
+        "text_dim":   (80, 140, 200),    # Readable on small TFT
     },
     "red": {  # Honda Sport red
         "primary":    (255, 30, 30),     # Vivid red gauges
-        "primary_dim":(120, 10, 10),     # Dark red backgrounds
+        "primary_dim":(180, 20, 20),     # Brighter red backgrounds
         "accent":     (220, 20, 20),
         "bg":         (12, 2, 2),        # Deep red-black
         "panel":      (25, 5, 5),
         "border":     (60, 12, 12),
         "border_lite":(45, 10, 10),
-        "text_bright":(255, 200, 190),   # Warm white
-        "text_med":   (200, 100, 90),
-        "text_dim":   (100, 40, 35),
+        "text_bright":(255, 210, 200),   # Warm white
+        "text_med":   (240, 150, 140),   # Boosted
+        "text_dim":   (180, 90, 80),     # Readable
     },
     "green": {  # Honda Eco green
         "primary":    (0, 230, 100),     # Vivid green gauges
-        "primary_dim":(0, 90, 40),       # Dark green backgrounds
+        "primary_dim":(0, 150, 65),      # Brighter green backgrounds
         "accent":     (0, 200, 80),
         "bg":         (2, 10, 4),        # Deep green-black
         "panel":      (4, 22, 10),
         "border":     (10, 50, 20),
         "border_lite":(8, 38, 16),
-        "text_bright":(200, 255, 210),   # Green-white
-        "text_med":   (80, 180, 100),
-        "text_dim":   (30, 80, 40),
+        "text_bright":(210, 255, 220),   # Green-white
+        "text_med":   (130, 220, 150),   # Boosted
+        "text_dim":   (80, 170, 100),    # Readable
     },
     "amber": {  # Classic amber instruments
         "primary":    (255, 180, 0),     # Bright amber gauges
-        "primary_dim":(100, 65, 0),      # Dark amber backgrounds
+        "primary_dim":(160, 110, 0),     # Brighter amber backgrounds
         "accent":     (230, 150, 0),
         "bg":         (10, 7, 2),        # Deep amber-black
         "panel":      (22, 16, 5),
         "border":     (55, 40, 10),
         "border_lite":(40, 30, 8),
-        "text_bright":(255, 235, 180),   # Warm amber-white
-        "text_med":   (190, 140, 60),
-        "text_dim":   (90, 65, 25),
+        "text_bright":(255, 240, 190),   # Warm amber-white
+        "text_med":   (230, 180, 90),    # Boosted
+        "text_dim":   (170, 130, 50),    # Readable
     },
     "day": {  # High-contrast daylight mode
         "primary":    (0, 0, 0),         # Black gauges on white
-        "primary_dim":(160, 160, 160),
+        "primary_dim":(130, 130, 130),
         "accent":     (40, 40, 40),
         "bg":         (240, 240, 235),   # Bright white
         "panel":      (225, 225, 220),
         "border":     (180, 180, 175),
         "border_lite":(200, 200, 195),
         "text_bright":(0, 0, 0),         # Pure black text
-        "text_med":   (50, 50, 50),
-        "text_dim":   (120, 120, 120),
+        "text_med":   (40, 40, 40),
+        "text_dim":   (80, 80, 80),
     },
     "night": {  # Ultra-dim night driving
         "primary":    (0, 120, 160),     # Very dim blue
-        "primary_dim":(0, 30, 45),
+        "primary_dim":(0, 60, 80),       # Slightly brighter for TFT
         "accent":     (0, 80, 110),
         "bg":         (1, 2, 4),         # Nearly black
         "panel":      (3, 5, 10),
         "border":     (6, 14, 25),
         "border_lite":(5, 10, 18),
-        "text_bright":(100, 140, 170),   # Dim blue-white
-        "text_med":   (50, 80, 105),
-        "text_dim":   (20, 35, 50),
+        "text_bright":(120, 160, 190),   # Slightly brighter
+        "text_med":   (80, 120, 155),    # Boosted
+        "text_dim":   (50, 80, 110),     # Readable
     },
 }
 
@@ -159,33 +159,34 @@ class CarHUD:
         self.surf = pygame.Surface((self.width, self.height))
         pygame.mouse.set_visible(False)
 
-        lib_bold = "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf"
-        lib_reg = "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf"
+        # Use bold fonts everywhere for 2.5" TFT visibility
+        fs_bold = "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf"
         dv_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-        dv_reg = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-        dv_mono = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
-        bold = lib_bold if os.path.exists(lib_bold) else dv_bold
-        reg = lib_reg if os.path.exists(lib_reg) else dv_reg
+        dv_mono = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
+        dv_mono_reg = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
+        bold = fs_bold if os.path.exists(fs_bold) else dv_bold
+        mono = dv_mono if os.path.exists(dv_mono) else dv_mono_reg
 
-        # Bigger fonts for 3.5" readability
-        self.font_xxl  = pygame.font.Font(bold, 52)
-        self.font_xl   = pygame.font.Font(bold, 36)
-        self.font_lg   = pygame.font.Font(bold, 26)
-        self.font_md   = pygame.font.Font(reg, 16)
-        self.font_sm   = pygame.font.Font(reg, 13)
-        self.font_xs   = pygame.font.Font(reg, 11)
-        self.font_mono = pygame.font.Font(dv_mono, 10)
+        # All bold, slightly larger for 2.5" TFT readability
+        self.font_xxl  = pygame.font.Font(bold, 54)
+        self.font_xl   = pygame.font.Font(bold, 38)
+        self.font_lg   = pygame.font.Font(bold, 28)
+        self.font_md   = pygame.font.Font(bold, 17)
+        self.font_sm   = pygame.font.Font(bold, 14)
+        self.font_xs   = pygame.font.Font(bold, 12)
+        self.font_mono = pygame.font.Font(mono, 11)
 
-        # CJK font for Japanese/Korean/Chinese text
+        # CJK font for Japanese/Korean/Chinese text (bold)
         cjk_paths = [
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
             "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
             "/usr/share/fonts/opentype/noto/NotoSansCJK-DemiLight.ttc",
         ]
         self.font_cjk = None
         for cp in cjk_paths:
             if os.path.exists(cp):
-                self.font_cjk = pygame.font.Font(cp, 13)
-                self.font_cjk_sm = pygame.font.Font(cp, 11)
+                self.font_cjk = pygame.font.Font(cp, 14)
+                self.font_cjk_sm = pygame.font.Font(cp, 12)
                 break
 
         self.clock_t = pygame.time.Clock()
