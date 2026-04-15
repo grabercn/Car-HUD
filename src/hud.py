@@ -561,7 +561,6 @@ class CarHUD:
         t = self.t
         now = datetime.datetime.now()
 
-        pygame.draw.line(s, t["primary_dim"], (0, 0), (W, 0), 1)
 
         # Time (bigger)
         time_str = now.strftime("%I:%M")
@@ -721,10 +720,10 @@ class CarHUD:
                 except Exception:
                     pass
 
-        # OBD
+        # OBD — primary=connected, amber=service running, dim=off
         if obd["connected"] and obd.get("data"):
             oc = t["primary"]
-        elif obd.get("timestamp", 0) > 0 and time.time() - obd["timestamp"] < 30:
+        elif obd.get("status") and obd["status"] not in ("offline", ""):
             oc = AMBER
         else:
             oc = t["text_dim"]
@@ -755,7 +754,7 @@ class CarHUD:
                 wd = json.load(f)
                 ws = wd.get("state", "")
                 net_ssid = wd.get("ssid", "")
-                if ws == "connected":
+                if ws == "connected" or ws == "tethered":
                     nc = t["primary"]
                 elif ws == "connecting":
                     nc = AMBER
@@ -1020,7 +1019,6 @@ class CarHUD:
         t = self.t
 
         s.fill(t["bg"])
-        pygame.draw.line(s, t["primary_dim"], (0, 0), (W, 0), 1)
 
         title = self.font_md.render("Voice Commands", True, t["primary"])
         s.blit(title, ((W - title.get_width()) // 2, 6))

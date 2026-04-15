@@ -107,13 +107,17 @@ def main():
 
     # Play startup chime (Unique chime if just updated)
     UPDATE_FLAG = "/home/chrismslist/car-hud/.update_pending"
+    VERSION_FILE = "/home/chrismslist/car-hud/.version"
+    updated = False
     if os.path.exists(UPDATE_FLAG):
-        subprocess.Popen(["aplay", "-q", "/home/chrismslist/car-hud/chime_update_ok.wav"],
+        updated = True
+        subprocess.Popen(["aplay", "-D", "default", "-q",
+                         "/home/chrismslist/car-hud/chime_update_ok.wav"],
                          stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
         try: os.remove(UPDATE_FLAG)
         except: pass
     else:
-        subprocess.Popen(["aplay", "-q", "/home/chrismslist/car-hud/chime_startup.wav"],
+        subprocess.Popen(["aplay", "-D", "default", "-q", "/home/chrismslist/car-hud/chime_startup.wav"],
                          stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 
     # Load splash image
@@ -231,6 +235,36 @@ def main():
     display_pos = 0.0      # what's actually shown (0-1), moves silkily
     last_frame_time = time.monotonic()
 
+    # Show update banner if just updated
+    if updated:
+        ver = ""
+        try:
+            with open(VERSION_FILE) as vf:
+                ver = vf.read().strip()[:8]
+        except: pass
+        # Show update success for 4 seconds
+        update_start = time.monotonic()
+        while time.monotonic() - update_start < 4:
+            screen.blit(splash_surf, (0, 0))
+            # Dark overlay
+            overlay = pygame.Surface((dw, dh), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 160))
+            screen.blit(overlay, (0, 0))
+            # Green accent line
+            pygame.draw.line(screen, (0, 200, 80), (0, 0), (dw, 0), 2)
+            # Update text
+            title = font_md.render("System Updated", True, (0, 220, 100))
+            screen.blit(title, ((dw - title.get_width()) // 2, dh // 2 - 40))
+            if ver:
+                ver_t = font_sm.render(f"Version: {ver}", True, (150, 200, 160))
+                screen.blit(ver_t, ((dw - ver_t.get_width()) // 2, dh // 2))
+            hint = font_xs.render("Restarting services...", True, (80, 120, 90))
+            screen.blit(hint, ((dw - hint.get_width()) // 2, dh // 2 + 30))
+            pygame.display.flip()
+            clock.tick(15)
+            for event in pygame.event.get():
+                if event.type == QUIT: break
+
     running = True
     while running:
         for event in pygame.event.get():
@@ -302,6 +336,7 @@ def main():
         pygame.draw.line(screen, (30, 35, 45), (dw // 2, bar_y), (dw // 2, bar_y + bar_h), 1)
 
         # Fill bar — clip from pre-rendered gradient
+        fill_w = max(0, int(bar_w * progress))
         if fill_w > r * 2:
             screen.blit(full_fill, (bar_x, bar_y),
                         area=pygame.Rect(0, 0, fill_w, bar_h))

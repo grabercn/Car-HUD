@@ -1,3 +1,5 @@
+SETTINGS_HTML = '<!DOCTYPE html>\n<html><head><title>Car-HUD Settings</title>\n<meta name="viewport" content="width=device-width">\n<style>\n*{margin:0;padding:0;box-sizing:border-box}\nbody{background:#0a0a12;color:#ccc;font-family:monospace;padding:50px 12px 12px}\nnav{position:fixed;top:0;left:0;width:100%;background:rgba(0,0,0,0.9);padding:6px 12px;display:flex;gap:16px;z-index:10;font-size:12px}\nnav a{color:#0af;text-decoration:none}\nh2{color:#0af;margin:14px 0 6px;font-size:13px}\n.card{background:#111;border:1px solid #222;border-radius:6px;padding:10px;margin:6px 0}\n.row{display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:11px}\n.dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}\n.g{background:#0a4}.a{background:#da0}.r{background:#d33}.d{background:#333}\nbutton{background:#0af;color:#000;border:none;padding:4px 10px;border-radius:3px;cursor:pointer;font:11px monospace}\nbutton:hover{background:#0cf}\ninput,select{background:#1a1a2a;border:1px solid #333;color:#ccc;padding:4px 8px;border-radius:3px;font:11px monospace}\n.item{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #1a1a1a;font-size:11px}\n.dim{color:#567}\n#log{background:#050510;border:1px solid #1a1a1a;padding:6px;margin-top:8px;font-size:10px;max-height:80px;overflow-y:auto;border-radius:3px}\n.toggle{display:flex;align-items:center;gap:8px}\n</style></head><body>\n<nav><a href="/">HUD</a><a href="/camera">Camera</a><a href="/dashcam">Recordings</a>\n<a href="/settings">Settings</a><a href="/settings">Settings</a></nav>\n\n<h2>WiFi</h2>\n<div class="card">\n<div class="row"><span id="ws">...</span><button onclick="scanW()">Scan</button></div>\n<div id="wn"></div>\n<div class="row" style="margin-top:6px"><input id="ss" placeholder="SSID" style="width:120px"><input id="pw" placeholder="Password" type="password" style="width:120px"><button onclick="conW()">Connect</button></div>\n</div>\n\n<h2>Bluetooth</h2>\n<div class="card">\n<div class="row"><span id="bs">...</span><button onclick="scanB()">Scan</button></div>\n<div id="bd"></div>\n<div class="row toggle"><span>Audio Streaming</span><button id="aud-btn" onclick="togAud()">ON</button></div>\n</div>\n\n<h2>Theme</h2>\n<div class="card"><div class="row">\n<select id="ts" onchange="setT()">\n<option value="auto">Auto Day/Night</option>\n<option value="blue">Blue</option><option value="red">Red</option>\n<option value="green">Green</option><option value="amber">Amber</option>\n<option value="day">Day</option><option value="night">Night</option>\n</select></div></div>\n\n<h2>System</h2>\n<div class="card" id="sys">...</div>\n\n<h2>Music</h2>\n<div class="card" id="mus">...</div>\n\n<div id="log"></div>\n\n<script>\nconst L=m=>{const l=document.getElementById(\'log\');l.innerHTML+=m+\'<br>\';l.scrollTop=9999};\nlet audOn=true;\n\nasync function load(){try{\nconst d=await(await fetch(\'/status\')).json();\nconst w=d.wifi||{};const ws=w.state||\'?\';\nconst dc=ws==\'connected\'||ws==\'tethered\'?\'g\':ws==\'connecting\'?\'a\':\'d\';\ndocument.getElementById(\'ws\').innerHTML=\'<span class="dot \'+dc+\'"></span>\'+(w.ssid||ws);\n\nlet s=\'\';\nif(d.obd){const o=d.obd;s+=\'<div class="row">OBD: <span class="dot \'+(o.connected?\'g\':\'d\')+\'"></span>\'+(o.connected?o.adapter||\'Connected\':o.status)+\'</div>\'}\nif(d.dashcam){s+=\'<div class="row">Cam: \'+(d.dashcam.recording?\'REC\':\'Idle\')+\' \'+d.dashcam.size_mb+\'MB / \'+d.dashcam.cam_count+\' cam(s)</div>\'}\ns+=\'<div class="row">Mic: \'+(d.mic||\'none\')+\'</div>\';\ndocument.getElementById(\'sys\').innerHTML=s;\n\n// Music\nconst m=d.obd;// placeholder\ntry{\nconst md=await(await fetch(\'/status\')).json();\nif(md.music){document.getElementById(\'mus\').innerHTML=md.music.playing?md.music.track+\' - \'+md.music.artist:\'Not playing\'}\n}catch(e){}\n}catch(e){}}\n\nasync function scanW(){L(\'Scanning...\');try{\nconst d=await(await fetch(\'/api/wifi/scan\')).json();\nlet h=\'\';for(const n of d)h+=\'<div class="item"><span>\'+n.ssid+\'</span><span class="dim">\'+n.signal+\'%</span></div>\';\ndocument.getElementById(\'wn\').innerHTML=h;L(d.length+\' networks\');}catch(e){L(\'Error\')}}\n\nasync function conW(){const s=document.getElementById(\'ss\').value,p=document.getElementById(\'pw\').value;\nif(!s){L(\'Enter SSID\');return}L(\'Connecting...\');\nconst r=await(await fetch(\'/api/wifi/connect\',{method:\'POST\',body:\'ssid=\'+encodeURIComponent(s)+\'&password=\'+encodeURIComponent(p)})).json();\nL(r.success?\'Connected!\':\'Failed: \'+r.msg);setTimeout(load,3000)}\n\nasync function scanB(){L(\'Scanning BT (8s)...\');\nconst d=await(await fetch(\'/api/bt/scan\')).json();\nlet h=\'\';for(const v of d)h+=\'<div class="item"><span>\'+v.name+\'</span><button onclick="pairB(\\\'\'+v.mac+\'\\\')">Pair</button></div>\';\ndocument.getElementById(\'bd\').innerHTML=h;L(d.length+\' devices\')}\n\nasync function pairB(mac){L(\'Pairing \'+mac+\'...\');\nawait fetch(\'/api/bt/pair\',{method:\'POST\',body:\'mac=\'+encodeURIComponent(mac)});L(\'Paired\')}\n\nasync function togAud(){audOn=!audOn;\nawait fetch(\'/api/bt/audio\',{method:\'POST\',body:\'enable=\'+audOn});\ndocument.getElementById(\'aud-btn\').textContent=audOn?\'ON\':\'OFF\';L(\'Audio \'+(audOn?\'enabled\':\'disabled\'))}\n\nasync function setT(){const t=document.getElementById(\'ts\').value;\nawait fetch(\'/api/theme/set\',{method:\'POST\',body:\'theme=\'+(t==\'auto\'?\'blue\':t)+\'&auto=\'+(t==\'auto\')});L(\'Theme: \'+t)}\n\nload();setInterval(load,5000);\n</script></body></html>'
+
 #!/usr/bin/env python3
 """Car-HUD Web Server
 - Live HUD stream (MJPEG)
@@ -97,6 +99,16 @@ class Handler(BaseHTTPRequestHandler):
             self.serve_screenshot()
         elif path.startswith("/key/"):
             self.handle_key(path)
+        elif path == "/settings":
+            self.serve_settings()
+        elif path == "/api/wifi/scan":
+            self.api_wifi_scan()
+        elif path == "/api/wifi/disconnect":
+            self.api_wifi_disconnect()
+        elif path == "/api/bt/scan":
+            self.api_bt_scan()
+        elif path == "/api/theme":
+            self.api_get_theme()
         elif path == "/status":
             self.serve_status()
         else:
@@ -123,7 +135,7 @@ nav a:hover{color:#fff}
 <nav>
 <a href="/">HUD</a>
 <a href="/camera">Cameras</a>
-<a href="/dashcam">Recordings</a>
+<a href="/dashcam">Recordings</a>\n<a href="/settings">Settings</a>
 </nav>
 <div class="view" style="padding-top:24px"><img id="hud" src="/stream"></div>
 <div class="keys">C:Cam H:Help 1-6:Theme ESC:Close</div>
@@ -177,7 +189,7 @@ nav a{{color:#0af;text-decoration:none}}
 <nav>
 <a href="/">HUD</a>
 <a href="/camera">Cameras</a>
-<a href="/dashcam">Recordings</a>
+<a href="/dashcam">Recordings</a>\n<a href="/settings">Settings</a>
 </nav>
 <div class="rec">&#9679; LIVE</div>
 <div class="view">{cam_html}</div>
@@ -251,7 +263,7 @@ a{{color:#0af}}
 <nav>
 <a href="/">HUD</a>
 <a href="/camera">Cameras</a>
-<a href="/dashcam">Recordings</a>
+<a href="/dashcam">Recordings</a>\n<a href="/settings">Settings</a>
 </nav>
 
 <h2 class="saved-hdr">Saved Clips</h2>
@@ -438,13 +450,111 @@ a{{color:#0af}}
                       ("/tmp/car-hud-voice-signal", "voice"),
                       ("/tmp/car-hud-wifi-data", "wifi"),
                       ("/tmp/car-hud-dashcam-data", "dashcam"),
-                      ("/tmp/car-hud-mic-level", "mic")]:
+                      ("/tmp/car-hud-mic-level", "mic"),
+                      ("/tmp/car-hud-music-data", "music")]:
             try:
                 with open(f) as fh:
                     status[k] = json.load(fh) if "data" in f or "signal" in f else fh.read()
             except Exception:
                 pass
         self.wfile.write(json.dumps(status).encode())
+
+    def do_POST(self):
+        path = self.path.split("?")[0]
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length).decode() if length else ""
+        import urllib.parse
+        params = urllib.parse.parse_qs(body)
+
+        if path == "/api/wifi/connect":
+            ssid = params.get("ssid", [""])[0]
+            pw = params.get("password", [""])[0]
+            import subprocess
+            cmd = ["nmcli", "dev", "wifi", "connect", ssid]
+            if pw:
+                cmd += ["password", pw]
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            self._json_response({"success": r.returncode == 0, "msg": (r.stdout + r.stderr).strip()})
+
+        elif path == "/api/theme/set":
+            theme = params.get("theme", ["blue"])[0]
+            auto = params.get("auto", ["false"])[0] == "true"
+            with open("/home/chrismslist/car-hud/.theme", "w") as f:
+                json.dump({"theme": theme, "auto": auto}, f)
+            self._json_response({"success": True})
+
+        elif path == "/api/bt/pair":
+            mac = params.get("mac", [""])[0]
+            import subprocess
+            subprocess.run(["bluetoothctl", "pair", mac], capture_output=True, timeout=15)
+            subprocess.run(["bluetoothctl", "trust", mac], capture_output=True, timeout=5)
+            subprocess.run(["bluetoothctl", "connect", mac], capture_output=True, timeout=10)
+            self._json_response({"success": True, "mac": mac})
+
+        elif path == "/api/bt/audio":
+            enable = params.get("enable", ["true"])[0] == "true"
+            import subprocess
+            if enable:
+                subprocess.run(["sudo", "systemctl", "start", "raspotify"], capture_output=True, timeout=5)
+            else:
+                subprocess.run(["sudo", "systemctl", "stop", "raspotify"], capture_output=True, timeout=5)
+            self._json_response({"success": True, "audio": enable})
+
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def _json_response(self, data):
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(json.dumps(data).encode())
+
+    
+    def serve_settings(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html")
+        self.end_headers()
+        self.wfile.write(SETTINGS_HTML.encode())
+
+    def api_wifi_scan(self):
+        import subprocess
+        r = subprocess.run(["nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY", "dev", "wifi", "list", "--rescan", "yes"],
+                           capture_output=True, text=True, timeout=15)
+        nets = []
+        seen = set()
+        for line in r.stdout.strip().split("\n"):
+            p = line.split(":")
+            if len(p) >= 2 and p[0] and p[0] not in seen:
+                seen.add(p[0])
+                nets.append({"ssid": p[0], "signal": p[1] if len(p)>1 else "?", "security": p[2] if len(p)>2 else ""})
+        self._json_response(nets[:15])
+
+    def api_wifi_disconnect(self):
+        import subprocess
+        subprocess.run(["nmcli", "dev", "disconnect", "wlan0"], capture_output=True, timeout=10)
+        self._json_response({"success": True})
+
+    def api_bt_scan(self):
+        import subprocess
+        subprocess.run(["bluetoothctl", "scan", "on"], capture_output=True, timeout=2)
+        import time; time.sleep(8)
+        subprocess.run(["bluetoothctl", "scan", "off"], capture_output=True, timeout=2)
+        r = subprocess.run(["bluetoothctl", "devices"], capture_output=True, text=True, timeout=5)
+        devs = []
+        for line in r.stdout.strip().split("\n"):
+            p = line.split(" ", 2)
+            if len(p) >= 3:
+                devs.append({"mac": p[1], "name": p[2]})
+        self._json_response(devs[:15])
+
+    def api_get_theme(self):
+        try:
+            with open("/home/chrismslist/car-hud/.theme") as f:
+                self._json_response(json.load(f))
+        except:
+            self._json_response({"theme": "blue", "auto": True})
 
     def log_message(self, format, *args):
         pass
