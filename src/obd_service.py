@@ -196,13 +196,9 @@ class BleOBD:
                             else:
                                 data.update(self.parse_group_response(resp, slow_group))
 
-                        # Threshold checks
+                        # Only warn on critical overheating
                         cool = data.get("COOLANT_TEMP", 0)
-                        if cool > 105: warnings.append(f"HOT COOLANT {cool:.0f}C")
-                        hv = data.get("HYBRID_BATTERY_REMAINING", 0)
-                        if hv < 15: warnings.append(f"LOW HV BATT {hv:.0f}%")
-                        volts = data.get("CONTROL_MODULE_VOLTAGE", 0)
-                        if volts < 11.5: warnings.append(f"LOW VOLTS {volts:.1f}V")
+                        if cool > 110: warnings.append(f"OVERHEAT {cool:.0f}C")
 
                         # DTC check every 60s
                         dtcs = []
