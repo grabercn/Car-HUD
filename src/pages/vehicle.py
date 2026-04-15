@@ -10,16 +10,18 @@ GREEN = (0, 180, 85)
 AMBER = (220, 160, 0)
 RED = (220, 45, 45)
 
-_scroll_offset = 0
-_scroll_target = 0
-_scroll_idx = 0
-_last_scroll_time = 0
-_SCROLL_INTERVAL = 6
-_SCROLL_SPEED = 6
+_scroll_y = 0.0
+_scroll_from = 0.0
+_scroll_to = 0.0
+_scroll_start_t = 0
+_SCROLL_DURATION = 0.3
+_view_start = 0
+_current_idx = 0
+_scrolling = False
 
 
 def draw(hud, obd, music):
-    global _scroll_offset, _scroll_target, _scroll_idx, _last_scroll_time
+    global _scroll_y, _scroll_from, _scroll_to, _scroll_start_t, _view_start, _current_idx, _scrolling
 
     W, H = hud.width, hud.height
     s = hud.surf
@@ -131,31 +133,44 @@ def draw(hud, obd, music):
 
     n = len(active)
     now_t = time.time()
-    if n > 1 and now_t - _last_scroll_time > _SCROLL_INTERVAL:
-        _last_scroll_time = now_t
-        _scroll_idx += 1
-        _scroll_target = _scroll_idx * widget_h
 
-    # Animate
-    if _scroll_offset < _scroll_target:
-        _scroll_offset = min(_scroll_offset + _SCROLL_SPEED, _scroll_target)
+    # Get current widget's view_time
+    cur_mod = active[_current_idx % n][1]
+    pause_time = getattr(cur_mod, "view_time", 6)
 
-    # Reset when cycled through all
-    if _scroll_idx >= n:
-        _scroll_offset = 0
-        _scroll_target = 0
-        _scroll_idx = 0
-        _last_scroll_time = now_t
+    if not _scrolling:
+        if _view_start == 0:
+            _view_start = now_t
+        if now_t - _view_start > pause_time and n > 1:
+            _scrolling = True
+            _current_idx += 1
+            _scroll_from = _scroll_y
+            _scroll_to = _current_idx * widget_h
+            _scroll_start_t = now_t
+    else:
+        elapsed = now_t - _scroll_start_t
+        progress = min(elapsed / _SCROLL_DURATION, 1.0)
+        eased = 1.0 - (1.0 - progress) ** 3  # cubic ease-out
+        _scroll_y = _scroll_from + (_scroll_to - _scroll_from) * eased
+
+        if progress >= 1.0:
+            _scroll_y = _scroll_to
+            _scrolling = False
+            _view_start = now_t
+            if _current_idx >= n:
+                _current_idx = 0
+                _scroll_y = 0.0
 
     # Clip and draw
     clip = pygame.Rect(6, wly, W - 12, widget_h)
     old_clip = s.get_clip()
     s.set_clip(clip)
 
+    offset = int(_scroll_y)
     for i in range(n + 1):
         idx = i % n
         wname, mod = active[idx]
-        slot_y = wly + i * widget_h - _scroll_offset
+        slot_y = wly + i * widget_h - offset
         if slot_y + widget_h < wly or slot_y > wly + widget_h:
             continue
         try:

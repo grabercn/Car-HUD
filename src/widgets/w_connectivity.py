@@ -7,6 +7,7 @@ import pygame
 
 name = "Connectivity"
 priority = 15
+view_time = 5  # seconds — just status glance
 
 _bt_cache = {"connected": False, "name": "", "last_check": 0}
 

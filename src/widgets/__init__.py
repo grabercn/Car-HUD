@@ -15,6 +15,9 @@ import importlib
 import glob
 import time
 
+_online = False
+_online_check_time = 0
+
 _widgets = []
 _loaded = False
 CONFIG_FILE = "/home/chrismslist/car-hud/.widget-config.json"
@@ -55,18 +58,39 @@ def save_config(config):
         pass
 
 
+def is_online():
+    """Check if system has internet. Cached for 30 seconds."""
+    global _online, _online_check_time
+    now = time.time()
+    if now - _online_check_time < 30:
+        return _online
+    _online_check_time = now
+    try:
+        with open("/tmp/car-hud-wifi-data") as f:
+            wd = json.load(f)
+        _online = wd.get("state") in ("connected", "tethered")
+    except Exception:
+        _online = False
+    return _online
+
+
 def get_active(hud, music):
-    """Return active widgets sorted by effective priority (base + urgency)."""
+    """Return active widgets sorted by effective priority (base + urgency).
+    Respects requires_online flag — skips widgets that need internet when offline.
+    """
     _load_widgets()
     config = _load_config()
+    online = is_online()
     active = []
     for mod in _widgets:
         wname = mod.name.lower()
         if not config.get(wname, {}).get("enabled", True):
             continue
+        # Skip widgets that require internet when offline
+        if getattr(mod, "requires_online", False) and not online:
+            continue
         try:
             if mod.is_active(hud, music):
-                # Effective priority = base priority + urgency adjustment
                 urg = 0
                 if hasattr(mod, "urgency"):
                     urg = mod.urgency(hud, music)

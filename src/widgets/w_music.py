@@ -6,6 +6,7 @@ import pygame
 
 name = "Music"
 priority = 10
+view_time = 12  # seconds — user needs time to read track info
 
 _last_track = ""
 _track_change_time = 0

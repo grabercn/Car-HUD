@@ -1308,12 +1308,12 @@ class CarHUD:
                         elif vsig.get("action") == "show" and vsig.get("target") == "help":
                             self.draw_help_overlay()
                             self.present()
-                            self.clock_t.tick(30)
+                            self.clock_t.tick(60)
                             continue
                         elif vsig.get("action") == "show" and vsig.get("target") == "keys":
                             self.draw_keys_overlay()
                             self.present()
-                            self.clock_t.tick(30)
+                            self.clock_t.tick(60)
                             continue
                         elif vsig.get("action") == "widget":
                             # Voice widget control: "show/hide <name> widget"
@@ -1391,7 +1391,7 @@ class CarHUD:
                 self.draw_terminal_overlay()
 
             self.present()
-            self.clock_t.tick(30)
+            self.clock_t.tick(60)
 
         pygame.quit()
 

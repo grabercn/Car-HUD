@@ -4,7 +4,8 @@ import os
 import pygame
 
 name = "System"
-priority = 99  # lowest — fallback
+priority = 99
+view_time = 5  # seconds — quick info
 
 
 def is_active(hud, music):

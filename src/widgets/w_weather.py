@@ -7,6 +7,8 @@ import pygame
 
 name = "Weather"
 priority = 25
+view_time = 8
+requires_online = True
 
 _data = {"temp": "", "desc": "", "icon": "", "city": "", "last_fetch": 0, "ok": False}
 _fetching = False

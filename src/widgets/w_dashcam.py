@@ -6,6 +6,7 @@ import pygame
 
 name = "Dashcam"
 priority = 15
+view_time = 6  # seconds
 
 RED = (220, 45, 45)
 _was_recording = False
