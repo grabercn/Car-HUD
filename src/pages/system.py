@@ -1,17 +1,12 @@
-"""System page — time header, rotating widget stack."""
+"""System page — time header, continuous scroll widget carousel."""
 
 import time
 import datetime
 import pygame
 import widgets
 
-GREEN = (0, 180, 85)
-AMBER = (220, 160, 0)
-RED = (220, 45, 45)
-
-_CYCLE_SECS = 8  # seconds per widget pair
-_last_idx = -1
-_slide_offset = 0
+_PAUSE = 6        # seconds to hold each pair
+_SCROLL_PX = 6    # pixels per frame (~90px/sec at 15fps)
 
 
 def draw(hud, stats, music):
@@ -44,7 +39,7 @@ def draw(hud, stats, music):
     wy = dy + 3
     strip_y = H - 22
     avail_h = strip_y - wy - 2
-    widget_h = avail_h // 2 - 2
+    wh = avail_h // 2 - 2  # each widget height
 
     active = widgets.get_active(hud, music)
     if not active:
@@ -57,31 +52,74 @@ def draw(hud, stats, music):
         return
 
     n = len(active)
-
-    if n == 1:
-        active[0][1].draw(hud, 6, wy, W - 12, avail_h, music)
+    if n <= 2:
+        for j in range(n):
+            h_each = avail_h if n == 1 else wh
+            active[j][1].draw(hud, 6, wy + j * (wh + 4), W - 12, h_each, music)
         return
 
-    # 2+ widgets: show 2 at a time, rotate based on wall clock
-    global _last_idx, _slide_offset
-    top_idx = int(now_t / _CYCLE_SECS) % n
-    bot_idx = (top_idx + 1) % n
+    # ── Continuous scroll for 3+ widgets ──
+    if not hasattr(draw, '_offset'):
+        draw._offset = 0.0
+        draw._target = 0
+        draw._pause_end = time.time() + _PAUSE
+        draw._last_top = ""
 
-    # Trigger slide when index changes
-    if top_idx != _last_idx:
-        _last_idx = top_idx
-        _slide_offset = 20  # start 20px below, slide up
+    # Interrupt: if priority order changed (new song, phone connected, etc)
+    # reset scroll to show the new top widget immediately
+    top_name = active[0][0] if active else ""
+    if top_name != draw._last_top:
+        draw._last_top = top_name
+        draw._offset = 0.0
+        draw._target = 0
+        draw._pause_end = now_t + getattr(active[0][1], "view_time", 6)
 
-    # Decay slide offset (simple ease)
-    if _slide_offset > 0:
-        _slide_offset = max(0, _slide_offset - 4)  # ~5 frames at 15fps
+    step = wh + 4  # one widget slot height
 
-    try:
-        active[top_idx][1].draw(hud, 6, wy + _slide_offset, W - 12, widget_h, music)
-    except Exception:
-        pass
+    # Which widgets are currently visible? Use their view_time for pause
+    top_slot = int(draw._offset / step) if step > 0 else 0
+    top_wi = top_slot % n
+    bot_wi = (top_slot + 1) % n
+    pause = max(
+        getattr(active[top_wi][1], "view_time", 6),
+        getattr(active[bot_wi][1], "view_time", 6)
+    )
 
-    try:
-        active[bot_idx][1].draw(hud, 6, wy + widget_h + 4 + _slide_offset, W - 12, widget_h, music)
-    except Exception:
-        pass
+    # Phase: pausing or scrolling?
+    if draw._offset >= draw._target:
+        # Paused — check if pause elapsed
+        if now_t >= draw._pause_end:
+            draw._target += step
+    else:
+        # Scrolling — advance by fixed pixels per frame
+        draw._offset = min(draw._offset + _SCROLL_PX, draw._target)
+        if draw._offset >= draw._target:
+            # Arrived — start pause with current widgets' view_time
+            draw._pause_end = now_t + pause
+
+    # Clip to widget area
+    clip = pygame.Rect(6, wy, W - 12, avail_h)
+    old_clip = s.get_clip()
+    s.set_clip(clip)
+
+    # Draw all widgets in a virtual list, offset by scroll
+    offset = int(draw._offset)
+    for i in range(n * 2):  # double for wraparound
+        wi = i % n
+        slot_y = wy + i * step - offset
+        if slot_y > strip_y:
+            break
+        if slot_y + wh < wy:
+            continue
+        try:
+            active[wi][1].draw(hud, 6, slot_y, W - 12, wh, music)
+        except Exception:
+            pass
+
+    s.set_clip(old_clip)
+
+    # Reset when we've scrolled through all widgets
+    if draw._offset >= n * step:
+        draw._offset = 0.0
+        draw._target = 0
+        draw._pause_end = now_t + _PAUSE

@@ -155,13 +155,10 @@ class CarHUD:
         self.screen = pygame.display.set_mode(
             (self.display_w, self.display_h), pygame.FULLSCREEN | pygame.NOFRAME)
 
-        # Render directly to screen — no intermediate surface, no scaling
-        self.width = self.display_w if self.display_w <= 640 else self.TARGET_W
-        self.height = self.display_h if self.display_h <= 480 else self.TARGET_H
-        if self.width == self.display_w and self.height == self.display_h:
-            self.surf = self.screen  # direct rendering — zero copy
-        else:
-            self.surf = pygame.Surface((self.width, self.height))
+        # Always render at 480x320, scale to display
+        self.width = self.TARGET_W
+        self.height = self.TARGET_H
+        self.surf = pygame.Surface((self.width, self.height))
         pygame.mouse.set_visible(False)
 
         # Use bold fonts everywhere for 2.5" TFT visibility

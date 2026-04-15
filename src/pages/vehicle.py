@@ -1,4 +1,4 @@
-"""Vehicle page — OBD instrument cluster with rotating widget."""
+"""Vehicle page — OBD instrument cluster with continuous scroll widget."""
 
 import math
 import time
@@ -10,9 +10,7 @@ GREEN = (0, 180, 85)
 AMBER = (220, 160, 0)
 RED = (220, 45, 45)
 
-_CYCLE_SECS = 6  # seconds per widget
-_last_idx = -1
-_slide_offset = 0
+_SCROLL_PX = 5  # pixels per frame
 
 
 def draw(hud, obd, music):
@@ -21,7 +19,6 @@ def draw(hud, obd, music):
     t = hud.t
     vd = hud.smooth_data
     now = datetime.datetime.now()
-    now_t = time.time()
 
     rpm = vd.get("RPM", 0)
     speed = vd.get("SPEED", 0) * 0.621371
@@ -61,7 +58,6 @@ def draw(hud, obd, music):
     ml = hud.font_sm.render("EV" if ev else "GAS", True, (0, 0, 0))
     s.blit(ml, (cx - ml.get_width() // 2, cy + 33))
 
-    # Left: PWR/CHG
     lx, ly, lr = 65, 148, 70
     if ev:
         hud.draw_arc_gauge(lx, ly, lr, 10, min(throttle / 80, 1.0), GREEN,
@@ -75,7 +71,6 @@ def draw(hud, obd, music):
     hud.draw_glow_text("PWR", hud.font_xs, t["text_dim"], (lx - 12, ly - lr - 14))
     hud.draw_glow_text("CHG", hud.font_xs, GREEN, (lx - 12, ly + lr + 4))
 
-    # Right: Fuel/Batt
     rx, ry, rr = W - 65, 148, 70
     fc = GREEN if fuel > 20 else AMBER if fuel > 10 else RED
     hud.draw_arc_gauge(rx, ry, rr, 10, fuel / 100, fc, start=math.pi * 0.3, end=-math.pi * 0.3, ticks=True)
@@ -84,7 +79,6 @@ def draw(hud, obd, music):
     hud.draw_glow_text("FUEL", hud.font_xs, t["text_dim"], (rx - 15, ry - rr - 14))
     hud.draw_glow_text("BATT", hud.font_xs, t["text_dim"], (rx - 15, ry + rr + 4))
 
-    # Top info
     ty = 6 + wy_off
     hud.draw_glow_text(now.strftime("%I:%M"), hud.font_md, t["text_bright"], (12, ty))
     vl = f"{volts:.1f}V"
@@ -93,26 +87,69 @@ def draw(hud, obd, music):
     hud.draw_glow_text(f"{cool:.0f}C", hud.font_xs, t["text_med"],
                        (cx - 60 - hud.font_xs.size(f"{cool:.0f}C")[0], cy + 60))
 
-    # ── Widget — simple time-based rotation ──
+    # ── Widget — continuous scroll ──
     wly = cy + 96
-    widget_h = H - wly - 4
+    wh = H - wly - 4
 
     active = widgets.get_active(hud, music)
     if not active:
         return
 
     n = len(active)
-    global _last_idx, _slide_offset
-    idx = int(now_t / _CYCLE_SECS) % n
+    if n == 1:
+        active[0][1].draw(hud, 6, wly, W - 12, wh, music)
+        return
 
-    if idx != _last_idx:
-        _last_idx = idx
-        _slide_offset = 16
+    if not hasattr(draw, '_offset'):
+        draw._offset = 0.0
+        draw._target = 0
+        draw._pause_end = time.time() + 6
+        draw._last_top = ""
 
-    if _slide_offset > 0:
-        _slide_offset = max(0, _slide_offset - 3)
+    # Interrupt on priority change
+    top_name = active[0][0] if active else ""
+    if top_name != draw._last_top:
+        draw._last_top = top_name
+        draw._offset = 0.0
+        draw._target = 0
+        draw._pause_end = now_t + getattr(active[0][1], "view_time", 6)
 
-    try:
-        active[idx][1].draw(hud, 6, wly + _slide_offset, W - 12, widget_h, music)
-    except Exception:
-        pass
+    now_t = time.time()
+
+    # Current widget's view_time for pause
+    cur_wi = int(draw._offset / wh) % n if wh > 0 else 0
+    pause = getattr(active[cur_wi][1], "view_time", 6)
+
+    if draw._offset >= draw._target:
+        if now_t >= draw._pause_end:
+            draw._target += wh
+    else:
+        draw._offset = min(draw._offset + _SCROLL_PX, draw._target)
+        if draw._offset >= draw._target:
+            draw._pause_end = now_t + pause
+
+    # Clip and draw
+    clip = pygame.Rect(6, wly, W - 12, wh)
+    old_clip = s.get_clip()
+    s.set_clip(clip)
+
+    offset = int(draw._offset)
+    for i in range(n * 2):
+        wi = i % n
+        slot_y = wly + i * wh - offset
+        if slot_y > wly + wh:
+            break
+        if slot_y + wh < wly:
+            continue
+        try:
+            active[wi][1].draw(hud, 6, slot_y, W - 12, wh, music)
+        except Exception:
+            pass
+
+    s.set_clip(old_clip)
+
+    # Reset on full cycle
+    if draw._offset >= n * wh:
+        draw._offset = 0.0
+        draw._target = 0
+        draw._pause_end = now_t + pause
