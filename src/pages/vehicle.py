@@ -69,6 +69,7 @@ def draw(hud, obd, music):
         hud.draw_arc_gauge(lx, ly, lr, 10, lp, pc, start=math.pi, end=math.pi * 0.7, ticks=True)
         cp = 0.3 if (throttle < 5 and rpm > 800) else 0.0
         hud.draw_arc_gauge(lx, ly, lr, 10, cp, GREEN, start=math.pi, end=math.pi * 1.3)
+    # Static labels (cached by draw_glow_text)
     hud.draw_glow_text("PWR", hud.font_xs, t["text_dim"], (lx - 12, ly - lr - 14))
     hud.draw_glow_text("CHG", hud.font_xs, GREEN, (lx - 12, ly + lr + 4))
 

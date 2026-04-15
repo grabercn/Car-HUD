@@ -320,6 +320,10 @@ class CarHUD:
         return {"playing": False}
 
     def get_system_stats(self):
+        """System stats — cached for 2 seconds."""
+        now = time.time()
+        if hasattr(self, '_stats_cache') and now - self._stats_cache_t < 2:
+            return self._stats_cache
         stats = {}
         try:
             with open("/proc/uptime") as f:
@@ -337,6 +341,8 @@ class CarHUD:
             stats.setdefault("cpu_temp", 0)
             stats.setdefault("mem_used_pct", 0)
             stats.setdefault("uptime", 0)
+        self._stats_cache = stats
+        self._stats_cache_t = now
         return stats
 
     def _read_voice_signal(self):
@@ -391,9 +397,9 @@ class CarHUD:
         bg = bg_color or self.t["border"]
         start_angle = start
         end_angle = end
-        steps = 40
+        steps = 30  # reduced from 40 — still smooth, fewer draws
 
-        # Pre-computed line segments (cached per gauge geometry)
+        # Pre-computed segments (cached)
         if not hasattr(self, '_arc_cache'):
             self._arc_cache = {}
         arc_key = (cx, cy, radius, start_angle, end_angle, steps)
@@ -408,7 +414,6 @@ class CarHUD:
                     int(cx + radius * math.cos(a1)), int(cy - radius * math.sin(a1)),
                     int(cx + radius * math.cos(a2)), int(cy - radius * math.sin(a2))
                 ))
-            # Tick positions
             tick_segs = []
             if ticks:
                 for i in range(11):
@@ -423,11 +428,32 @@ class CarHUD:
 
         segs, tick_segs = self._arc_cache[arc_key]
 
-        # Draw background track
-        for x1, y1, x2, y2 in segs:
-            pygame.draw.line(s, bg, (x1, y1), (x2, y2), thickness)
+        # Pre-rendered background surface (bg arcs + ticks — never changes per theme)
+        if not hasattr(self, '_arc_bg_cache'):
+            self._arc_bg_cache = {}
+        bg_key = (arc_key, bg, self.theme_name, ticks)
+        if bg_key not in self._arc_bg_cache:
+            # Render bg + ticks to a surface once
+            # Find bounding box
+            all_pts = [(x1, y1) for x1, y1, x2, y2 in segs] + [(x2, y2) for x1, y1, x2, y2 in segs]
+            min_x = min(p[0] for p in all_pts) - thickness
+            min_y = min(p[1] for p in all_pts) - thickness
+            max_x = max(p[0] for p in all_pts) + thickness + 4
+            max_y = max(p[1] for p in all_pts) + thickness + 4
+            bw, bh = max_x - min_x, max_y - min_y
+            bg_surf = pygame.Surface((bw, bh), pygame.SRCALPHA)
+            for x1, y1, x2, y2 in segs:
+                pygame.draw.line(bg_surf, bg, (x1 - min_x, y1 - min_y), (x2 - min_x, y2 - min_y), thickness)
+            if ticks:
+                for x1, y1, x2, y2 in tick_segs:
+                    pygame.draw.line(bg_surf, self.t["border_lite"], (x1 - min_x, y1 - min_y), (x2 - min_x, y2 - min_y), 1)
+            self._arc_bg_cache[bg_key] = (bg_surf, min_x, min_y)
 
-        # Draw progress arc
+        # Blit pre-rendered background (1 blit vs 40+ line draws)
+        bg_surf, ox, oy = self._arc_bg_cache[bg_key]
+        s.blit(bg_surf, (ox, oy))
+
+        # Draw ONLY the dynamic fill arc (the part that changes)
         fill_steps = max(1, int(steps * min(pct, 1.0)))
         for i in range(fill_steps):
             x1, y1, x2, y2 = segs[i]
@@ -436,10 +462,6 @@ class CarHUD:
             elif pct > 0.7 and t > 0.7: c = AMBER
             else: c = color
             pygame.draw.line(s, c, (x1, y1), (x2, y2), thickness)
-
-        if ticks:
-            for x1, y1, x2, y2 in tick_segs:
-                pygame.draw.line(s, self.t["border_lite"], (x1, y1), (x2, y2), 1)
 
     def draw_hbar(self, x, y, w, h, pct, color, label=None, value=None):
         s = self.surf
@@ -1131,10 +1153,11 @@ class CarHUD:
         if self.display_w == self.width and self.display_h == self.height:
             self.screen.blit(self.surf, (0, 0))
         else:
-            # Fast scale (no smoothing) — smoothscale was killing FPS
-            scaled = pygame.transform.scale(self.surf,
-                                            (self.display_w, self.display_h))
-            self.screen.blit(scaled, (0, 0))
+            # Pre-allocated scale target — avoids Surface creation every frame
+            if not hasattr(self, '_scale_surf'):
+                self._scale_surf = pygame.Surface((self.display_w, self.display_h))
+            pygame.transform.scale(self.surf, (self.display_w, self.display_h), self._scale_surf)
+            self.screen.blit(self._scale_surf, (0, 0))
         pygame.display.flip()
 
         # Screenshot on request (for HTTP server) — BMP for speed in RAM disk
@@ -1263,14 +1286,15 @@ class CarHUD:
             music = self.get_music_data()
 
             # Smooth OBD data for animations
+            _FAST_KEYS = {"RPM", "SPEED", "ENGINE_LOAD", "THROTTLE_POS"}
             target_data = obd.get("data", {})
+            sd = self.smooth_data
             for k, v in target_data.items():
-                if k not in self.smooth_data:
-                    self.smooth_data[k] = v
+                if k not in sd:
+                    sd[k] = v
                 else:
-                    # Faster smoothing for RPM/Speed, slower for temps
-                    factor = 0.25 if k in ["RPM", "SPEED", "ENGINE_LOAD", "THROTTLE_POS"] else 0.08
-                    self.smooth_data[k] = self.smooth_data[k] + (v - self.smooth_data[k]) * factor
+                    f = 0.3 if k in _FAST_KEYS else 0.08
+                    sd[k] += (v - sd[k]) * f
 
             # Reload theme from file every 2 seconds (for voice commands)
             theme_check_timer += 1
