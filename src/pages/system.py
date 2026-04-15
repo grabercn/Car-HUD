@@ -1,4 +1,4 @@
-"""System page — time header, auto-rotating widget stack."""
+"""System page — time header, continuous-scroll widget carousel."""
 
 import time
 import datetime
@@ -9,14 +9,16 @@ GREEN = (0, 180, 85)
 AMBER = (220, 160, 0)
 RED = (220, 45, 45)
 
-_rotate_time = 0
-_rotate_offset = 0
-_slide_frame = 0
-_SLIDE_FRAMES = 4  # ~130ms at 30fps — quick snap
+_scroll_offset = 0      # current pixel offset (0 = resting)
+_scroll_target = 0      # target offset to scroll to
+_scroll_idx = 0         # which pair of widgets we're showing
+_last_scroll_time = 0
+_SCROLL_INTERVAL = 8    # seconds between scrolls
+_SCROLL_SPEED = 8       # pixels per frame during scroll
 
 
 def draw(hud, stats, music):
-    global _rotate_time, _rotate_offset, _slide_frame
+    global _scroll_offset, _scroll_target, _scroll_idx, _last_scroll_time
 
     W, H = hud.width, hud.height
     s = hud.surf
@@ -42,14 +44,13 @@ def draw(hud, stats, music):
     dy = 50
     pygame.draw.line(s, t["border_lite"], (10, dy), (W - 10, dy))
 
-    # ── Widget area: priority-based auto-rotating stack ──
+    # ── Widget carousel ──
     wy = dy + 3
     strip_y = H - 22
     avail_h = strip_y - wy - 2
 
     active = widgets.get_active(hud, music)
     if not active:
-        # No widgets — show logo
         if hud.honda_logo:
             target_h = min(80, avail_h - 10)
             logo = hud.honda_logo
@@ -59,30 +60,51 @@ def draw(hud, stats, music):
             s.blit(logo, ((W - logo.get_width()) // 2, wy + (avail_h - target_h) // 2))
         return
 
-    # Auto-rotate every 8 seconds with quick slide-up
+    widget_h = avail_h // 2 - 2  # each widget gets half height
+    total_pair_h = avail_h  # height of one "page" of 2 widgets
+
+    # Trigger scroll every SCROLL_INTERVAL seconds
     now_t = time.time()
-    if now_t - _rotate_time > 8:
-        _rotate_time = now_t
-        _rotate_offset += 1
-        _slide_frame = _SLIDE_FRAMES
+    if now_t - _last_scroll_time > _SCROLL_INTERVAL and len(active) > 2:
+        _last_scroll_time = now_t
+        _scroll_idx += 1
+        _scroll_target = _scroll_idx * total_pair_h
 
-    if _slide_frame > 0:
-        _slide_frame -= 1
+    # Animate scroll toward target
+    if _scroll_offset < _scroll_target:
+        _scroll_offset = min(_scroll_offset + _SCROLL_SPEED, _scroll_target)
 
-    # Slide offset: starts at 12px, snaps to 0 quickly
-    slide_y = int(12 * (_slide_frame / _SLIDE_FRAMES)) if _slide_frame > 0 else 0
+    # Clip to widget area
+    clip = pygame.Rect(6, wy, W - 12, avail_h)
+    old_clip = s.get_clip()
+    s.set_clip(clip)
 
-    # Show up to 2 widgets stacked
-    max_show = min(2, len(active))
-    widget_h = (avail_h - (max_show - 1) * 3) // max_show
-    shown = 0
-
-    for j in range(max_show):
-        idx = (_rotate_offset + j) % len(active)
+    # Render all widgets in a virtual scroll list
+    n = len(active)
+    for i in range(n + 2):  # extra for wrap-around
+        idx = i % n
         wname, mod = active[idx]
-        widget_y = wy + j * (widget_h + 3) + slide_y
+        # Each widget at position i in the virtual list
+        slot_y = wy + (i // 2) * total_pair_h + (i % 2) * (widget_h + 4) - _scroll_offset
+
+        # Skip if completely off screen
+        if slot_y + widget_h < wy or slot_y > strip_y:
+            continue
+
         try:
-            if mod.draw(hud, 6, widget_y, W - 12, widget_h, music):
-                shown += 1
+            mod.draw(hud, 6, slot_y, W - 12, widget_h, music)
         except Exception:
             pass
+
+    s.set_clip(old_clip)
+
+    # Reset scroll when we've gone through all widgets
+    if n <= 2:
+        _scroll_offset = 0
+        _scroll_target = 0
+        _scroll_idx = 0
+    elif _scroll_offset >= ((n + 1) // 2) * total_pair_h:
+        _scroll_offset = 0
+        _scroll_target = 0
+        _scroll_idx = 0
+        _last_scroll_time = now_t

@@ -1,4 +1,4 @@
-"""Vehicle page — OBD instrument cluster with auto-cycling widgets."""
+"""Vehicle page — OBD instrument cluster with scrolling widget."""
 
 import math
 import time
@@ -10,15 +10,16 @@ GREEN = (0, 180, 85)
 AMBER = (220, 160, 0)
 RED = (220, 45, 45)
 
-_widget_cycle_time = 0
-_widget_cycle_idx = 0
-_slide_frame = 0
-_SLIDE_FRAMES = 4
+_scroll_offset = 0
+_scroll_target = 0
+_scroll_idx = 0
+_last_scroll_time = 0
+_SCROLL_INTERVAL = 6
+_SCROLL_SPEED = 6
 
 
 def draw(hud, obd, music):
-    """Draw the vehicle instrument cluster page."""
-    global _widget_cycle_time, _widget_cycle_idx, _slide_frame
+    global _scroll_offset, _scroll_target, _scroll_idx, _last_scroll_time
 
     W, H = hud.width, hud.height
     s = hud.surf
@@ -26,7 +27,6 @@ def draw(hud, obd, music):
     vd = hud.smooth_data
     now = datetime.datetime.now()
 
-    # Data extraction
     rpm = vd.get("RPM", 0)
     speed = vd.get("SPEED", 0) * 0.621371
     load = vd.get("ENGINE_LOAD", 0)
@@ -38,7 +38,7 @@ def draw(hud, obd, music):
     intake = vd.get("INTAKE_TEMP", 0)
     ev = rpm < 100
 
-    # Warnings and DTCs
+    # Warnings
     wy = 0
     all_warnings = (obd.get("warnings") or [])[:]
     for dtc in (obd.get("dtcs") or []):
@@ -49,7 +49,7 @@ def draw(hud, obd, music):
         s.blit(txt, ((W - txt.get_width()) // 2, wy + 2))
         wy += txt.get_height() + 4
 
-    # ── Central Cluster: Speedo ──
+    # ── Central Speedo ──
     cx, cy = W // 2, 148
     r_speed = 115
     sp_pct = min(speed / 140, 1.0)
@@ -65,9 +65,8 @@ def draw(hud, obd, music):
     sp_pos = (cx - hud.font_xxl.size(sp_str)[0] // 2, cy - 65)
     hud.draw_glow_text(sp_str, hud.font_xxl, t["text_bright"], sp_pos)
 
-    unit_str = "MPH"
-    unit_pos = (cx - hud.font_md.size(unit_str)[0] // 2, cy - 2)
-    hud.draw_glow_text(unit_str, hud.font_md, t["text_dim"], unit_pos)
+    unit_pos = (cx - hud.font_md.size("MPH")[0] // 2, cy - 2)
+    hud.draw_glow_text("MPH", hud.font_md, t["text_dim"], unit_pos)
 
     # EV/GAS badge
     mc = GREEN if ev else t["primary"]
@@ -78,12 +77,11 @@ def draw(hud, obd, music):
     ml = hud.font_sm.render("EV" if ev else "GAS", True, (0, 0, 0))
     s.blit(ml, (cx - ml.get_width() // 2, cy + 29 + (badge_h - ml.get_height()) // 2))
 
-    # ── Left Cluster: CHG/PWR ──
+    # ── Left: CHG/PWR ──
     lx, ly = 65, 148
     lr = 70
     if ev:
-        pwr_pct = min(throttle / 80, 1.0)
-        hud.draw_arc_gauge(lx, ly, lr, 10, pwr_pct, GREEN,
+        hud.draw_arc_gauge(lx, ly, lr, 10, min(throttle / 80, 1.0), GREEN,
                            start=math.pi * 1.3, end=math.pi * 0.7, ticks=True)
     else:
         load_pct = min(load / 100, 1.0)
@@ -97,7 +95,7 @@ def draw(hud, obd, music):
     hud.draw_glow_text("PWR", hud.font_xs, t["text_dim"], (lx - 12, ly - lr - 14))
     hud.draw_glow_text("CHG", hud.font_xs, GREEN, (lx - 12, ly + lr + 4))
 
-    # ── Right Cluster: Fuel & Battery ──
+    # ── Right: Fuel & Battery ──
     rx, ry = W - 65, 148
     rr = 70
     fc = GREEN if fuel > 20 else AMBER if fuel > 10 else RED
@@ -117,32 +115,52 @@ def draw(hud, obd, music):
     hud.draw_glow_text(vl_str, hud.font_md, t["text_med"],
                        (W - hud.font_md.size(vl_str)[0] - 12, ty))
 
-    # ── Lower Data ──
+    # ── Temps ──
     hud.draw_glow_text(f"AIR {intake:.0f}C", hud.font_xs, t["text_dim"],
                        (cx + 60, cy + 60))
     hud.draw_glow_text(f"H2O {cool:.0f}C", hud.font_xs, t["text_med"],
                        (cx - 60 - hud.font_xs.size(f"H2O {cool:.0f}C")[0], cy + 60))
 
-    # ── Widget strip — single widget, auto-rotates ──
+    # ── Widget — continuous scroll ──
     wly = cy + 82
     widget_h = H - wly - 24
 
     active = widgets.get_active(hud, music)
-    if active:
-        now_t = time.time()
-        if now_t - _widget_cycle_time > 6:
-            _widget_cycle_time = now_t
-            _widget_cycle_idx = (_widget_cycle_idx + 1) % len(active)
-            _slide_frame = _SLIDE_FRAMES
-        if _widget_cycle_idx >= len(active):
-            _widget_cycle_idx = 0
-        if _slide_frame > 0:
-            _slide_frame -= 1
+    if not active:
+        return
 
-        slide_y = int(10 * (_slide_frame / _SLIDE_FRAMES)) if _slide_frame > 0 else 0
+    n = len(active)
+    now_t = time.time()
+    if n > 1 and now_t - _last_scroll_time > _SCROLL_INTERVAL:
+        _last_scroll_time = now_t
+        _scroll_idx += 1
+        _scroll_target = _scroll_idx * widget_h
 
-        wname, mod = active[_widget_cycle_idx]
+    # Animate
+    if _scroll_offset < _scroll_target:
+        _scroll_offset = min(_scroll_offset + _SCROLL_SPEED, _scroll_target)
+
+    # Reset when cycled through all
+    if _scroll_idx >= n:
+        _scroll_offset = 0
+        _scroll_target = 0
+        _scroll_idx = 0
+        _last_scroll_time = now_t
+
+    # Clip and draw
+    clip = pygame.Rect(6, wly, W - 12, widget_h)
+    old_clip = s.get_clip()
+    s.set_clip(clip)
+
+    for i in range(n + 1):
+        idx = i % n
+        wname, mod = active[idx]
+        slot_y = wly + i * widget_h - _scroll_offset
+        if slot_y + widget_h < wly or slot_y > wly + widget_h:
+            continue
         try:
-            mod.draw(hud, 6, wly + slide_y, W - 12, widget_h, music)
+            mod.draw(hud, 6, slot_y, W - 12, widget_h, music)
         except Exception:
             pass
+
+    s.set_clip(old_clip)
