@@ -57,6 +57,32 @@ def write_obd(data):
         pass
 
 
+# Cobra RAD 700i integration — reads from same BLE session
+COBRA_ADDR_FILE = "/home/chrismslist/car-hud/.cobra_adapter"
+COBRA_ALERT_CHAR = "b5e22deb-31ee-42ab-be6a-9be0837aa344"
+COBRA_GPS_CHAR = "0000fe51-8e22-4541-9d4c-21edae82ed19"
+COBRA_DATA_FILE = "/tmp/car-hud-cobra-data"
+GPS_FILE = "/tmp/car-hud-gps"
+
+COBRA_BANDS = {0x01:"X", 0x02:"K", 0x04:"Ka", 0x08:"Laser", 0x10:"Ka-POP", 0x20:"K-POP"}
+
+def write_cobra(data):
+    data["timestamp"] = time.time()
+    try:
+        with open(COBRA_DATA_FILE, "w") as f:
+            json.dump(data, f)
+    except Exception:
+        pass
+
+def write_gps(lat, lon, speed=0, heading=0):
+    try:
+        with open(GPS_FILE, "w") as f:
+            json.dump({"lat":lat,"lon":lon,"speed":speed,"heading":heading,
+                       "source":"cobra_rad700i","timestamp":time.time()}, f)
+    except Exception:
+        pass
+
+
 class BleOBD:
     def __init__(self):
         self.response = ""
@@ -95,28 +121,30 @@ class BleOBD:
         except Exception:
             pass
 
-        # First try saved address (skip scan entirely — much faster)
-        saved = self._load_saved_addr()
-        if saved:
-            log(f"Trying saved OBD address: {saved}")
-            try:
-                async with BleakClient(saved, timeout=5) as test:
-                    if test.is_connected:
-                        log(f"Connected to saved adapter: {saved}")
-                        return saved
-            except Exception:
-                log("Saved address failed, scanning...")
-
-        # BLE scan
-        log("Scanning BLE for OBD adapter...")
+        # Always scan to discover both OBD + Cobra
+        log("Scanning BLE...")
         devices = await BleakScanner.discover(timeout=10, return_adv=True)
+        obd_addr = None
         for addr, (dev, adv) in devices.items():
             name = (dev.name or "").lower()
+            # Check for OBD adapter
             for obd_name in OBD_NAMES:
                 if obd_name in name:
-                    log(f"Found: {dev.name} ({addr}) RSSI={adv.rssi}")
+                    log(f"Found OBD: {dev.name} ({addr}) RSSI={adv.rssi}")
                     self._save_addr(addr)
-                    return addr
+                    self._obd_device = dev
+                    obd_addr = addr
+            # Check for Cobra during same scan — store BLEDevice for direct connect
+            if "rad" in name or "cobra" in name:
+                log(f"Found Cobra: {dev.name} ({addr})")
+                self._cobra_device = dev  # BLEDevice for bleak connect
+                try:
+                    with open(COBRA_ADDR_FILE, "w") as f:
+                        f.write(addr)
+                except Exception:
+                    pass
+        if obd_addr:
+            return obd_addr
 
         # Last resort: check if adapter is paired via classic BT
         try:
@@ -172,25 +200,94 @@ class BleOBD:
                         pass
         return results
 
+    async def _connect_cobra(self):
+        """Connect Cobra using cached BLEDevice from last scan."""
+        # Use the BLEDevice cached during find_adapter scan
+        if hasattr(self, '_cobra_device') and self._cobra_device:
+            try:
+                log(f"Connecting Cobra: {self._cobra_device.address}")
+                client = BleakClient(self._cobra_device, timeout=10)
+                await client.connect()
+                if client.is_connected:
+                    log("Cobra connected!")
+                    write_cobra({"connected": True, "status": "connected"})
+                    return client
+            except Exception as e:
+                log(f"Cobra connect failed: {e}")
+
+        # Fallback: try saved address
+        cobra_addr = None
+        try:
+            with open(COBRA_ADDR_FILE) as f:
+                cobra_addr = f.read().strip()
+        except Exception:
+            pass
+        if cobra_addr:
+            try:
+                log(f"Trying saved Cobra: {cobra_addr}")
+                client = BleakClient(cobra_addr, timeout=8)
+                await client.connect()
+                if client.is_connected:
+                    log("Cobra connected via saved addr!")
+                    write_cobra({"connected": True, "status": "connected"})
+                    return client
+            except Exception as e:
+                log(f"Cobra saved addr failed: {e}")
+        return None
+
+    async def _read_cobra(self, cobra_client):
+        """Quick read from Cobra — called between OBD cycles."""
+        if not cobra_client or not cobra_client.is_connected:
+            return
+        try:
+            alert_raw = await cobra_client.read_gatt_char(COBRA_ALERT_CHAR)
+            alert = None
+            strength = 0
+            if len(alert_raw) >= 1:
+                band = COBRA_BANDS.get(alert_raw[0], "")
+                if band:
+                    alert = band
+                    strength = min(alert_raw[1] if len(alert_raw) > 1 else 0, 10)
+
+            gps_raw = await cobra_client.read_gatt_char(COBRA_GPS_CHAR)
+            lat = lon = spd = hdg = 0
+            if len(gps_raw) >= 6:
+                import struct
+                if len(gps_raw) >= 12:
+                    lat = struct.unpack("<i", gps_raw[0:4])[0] / 1e7
+                    lon = struct.unpack("<i", gps_raw[4:8])[0] / 1e7
+                    spd = struct.unpack("<H", gps_raw[8:10])[0] if len(gps_raw) >= 10 else 0
+                    hdg = struct.unpack("<H", gps_raw[10:12])[0] if len(gps_raw) >= 12 else 0
+
+            write_cobra({
+                "connected": True, "status": "active",
+                "alert": alert, "alert_strength": strength,
+                "gps_lat": lat, "gps_lon": lon,
+                "gps_speed": spd, "gps_heading": hdg,
+            })
+            if lat != 0:
+                write_gps(lat, lon, spd, hdg)
+        except Exception:
+            pass
+
     async def run(self):
         write_obd({"connected": False, "status": "scanning", "data": {}, "warnings": [], "dtcs": []})
 
         while True:
+            # Phase 1: Scan (discovers both OBD + Cobra)
             addr = await self.find_adapter()
             if not addr:
                 write_obd({"connected": False, "status": "no adapter", "data": {}, "warnings": [], "dtcs": []})
                 await asyncio.sleep(10)
                 continue
 
-            try:
-                # Signal other BLE services that OBD is using the radio
-                try:
-                    with open("/tmp/car-hud-obd-ble-lock", "w") as lf:
-                        lf.write(str(time.time()))
-                except Exception:
-                    pass
+            # Phase 2: Connect Cobra FIRST (while scan cache is fresh)
+            cobra_client = await self._connect_cobra()
 
-                async with BleakClient(addr, timeout=15) as client:
+            try:
+                # Phase 3: Connect OBD (use BLEDevice if available for reliability)
+                obd_target = self._obd_device if hasattr(self, '_obd_device') and self._obd_device else addr
+                async with BleakClient(obd_target, timeout=15) as client:
                     if not client.is_connected:
                         continue
 
@@ -292,16 +389,22 @@ class BleOBD:
                         })
 
                         cycle += 1
-                        await asyncio.sleep(0.05)  # 50ms between cycles = ~20Hz
+                        # Read Cobra radar between OBD cycles
+                        if cycle % 5 == 0:
+                            await self._read_cobra(cobra_client)
+
+                        await asyncio.sleep(0.05)
 
             except Exception as e:
                 log(f"BLE error: {e}")
                 write_obd({"connected": False, "status": "disconnected", "data": {}, "warnings": [], "dtcs": []})
-                await asyncio.sleep(5)
-
-            except Exception as e:
-                log(f"BLE error: {e}")
-                write_obd({"connected": False, "status": "disconnected", "data": {}, "warnings": [], "dtcs": []})
+                write_cobra({"connected": False, "status": "disconnected"})
+                # Disconnect Cobra gracefully
+                if cobra_client:
+                    try:
+                        await cobra_client.disconnect()
+                    except Exception:
+                        pass
                 await asyncio.sleep(5)
 
 
