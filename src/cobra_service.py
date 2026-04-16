@@ -98,9 +98,24 @@ def connect_and_read(addr):
             if len(value) >= 1:
                 band = BAND_MAP.get(value[0], "")
                 if band:
+                    prev_alert = alert
                     alert = band
                     strength = min(value[1] if len(value) > 1 else 0, 10)
                     log(f"ALERT: {band} str={strength}")
+                    # Play alert sound on new detection
+                    if band != prev_alert:
+                        sound_map = {
+                            "X": "radar_x.wav", "K": "radar_k.wav",
+                            "Ka": "radar_ka.wav", "Laser": "radar_laser.wav",
+                        }
+                        snd = sound_map.get(band, "radar_alert.wav")
+                        try:
+                            import subprocess
+                            subprocess.Popen(
+                                ["aplay", "-D", "default", "-q",
+                                 f"/home/chrismslist/car-hud/{snd}"],
+                                stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+                        except: pass
                 elif value[0] == 0:
                     if alert:
                         log("Alert cleared")
