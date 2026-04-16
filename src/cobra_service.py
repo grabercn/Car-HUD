@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
-"""Car-HUD Cobra RAD 700i — instant-connect on detection.
-The RAD 700i only advertises BLE for ~30s after power-on.
-This service continuously scans and connects the INSTANT it appears.
-Runs as standalone service (not merged with OBD — needs scan access).
-OBD service must be stopped briefly for the initial scan+connect,
-then both BLE connections coexist.
+"""Car-HUD Cobra RAD 700i — uses pygatt/gatttool (bleak times out on GATT resolution).
+Scans via bleak (fast), connects via pygatt (reliable).
 """
 
 import os
@@ -12,7 +8,7 @@ import json
 import time
 import struct
 import asyncio
-from bleak import BleakScanner, BleakClient
+import threading
 
 SIGNAL_FILE = "/tmp/car-hud-cobra-data"
 GPS_FILE = "/tmp/car-hud-gps"
@@ -20,14 +16,21 @@ LOG_FILE = "/tmp/car-hud-cobra.log"
 SAVED_ADDR_FILE = "/home/chrismslist/car-hud/.cobra_adapter"
 
 COBRA_NAMES = ["rad 700", "rad700", "cobra rad"]
-ALERT_CHAR = "b5e22deb-31ee-42ab-be6a-9be0837aa344"
-GPS_CHAR = "0000fe51-8e22-4541-9d4c-21edae82ed19"
+# GATT handles (from gatttool --characteristics)
+ALERT_HANDLE = 0x0024  # b5e22deb - alert data (read+notify)
+GPS_HANDLE = 0x000e    # 0000fe51 - GPS data (read+notify)
+
 BAND_MAP = {0x01:"X", 0x02:"K", 0x04:"Ka", 0x08:"Laser", 0x10:"Ka-POP", 0x20:"K-POP"}
 
 
 def log(msg):
     ts = time.strftime("%H:%M:%S")
-    print(f"[{ts}] {msg}", flush=True)
+    line = f"[{ts}] {msg}"
+    print(line, flush=True)
+    try:
+        with open(LOG_FILE, "a") as f:
+            f.write(line + "\n")
+    except: pass
 
 def write_data(data):
     data["timestamp"] = time.time()
@@ -44,136 +47,154 @@ def write_gps(lat, lon, speed=0, heading=0):
     except: pass
 
 
-async def main():
-    log("Cobra RAD 700i service — waiting for detector...")
-    write_data({"connected": False, "status": "scanning"})
+def scan_for_cobra():
+    """Use bleak for fast BLE scan (async), return address if found."""
+    import asyncio
+    from bleak import BleakScanner
 
-    cobra_device = None
+    found = [None]
 
-    def on_detect(device, adv):
-        nonlocal cobra_device
-        name = (device.name or "").lower()
-        if any(n in name for n in COBRA_NAMES) and not cobra_device:
-            cobra_device = device
-            log(f"DETECTED: {device.name} ({device.address})")
+    async def _scan():
+        devs = await BleakScanner.discover(timeout=10, return_adv=True)
+        for addr, (dev, adv) in devs.items():
+            name = (dev.name or "").lower()
+            if any(n in name for n in COBRA_NAMES):
+                log(f"Scan found: {dev.name} ({addr})")
+                found[0] = addr
+                try:
+                    with open(SAVED_ADDR_FILE, "w") as f:
+                        f.write(addr)
+                except: pass
+                return
 
-    # Phase 1: Continuous background scan until Cobra appears
-    # OBD service may block scanning — we retry every 30s
-    while not cobra_device:
-        try:
-            scanner = BleakScanner(detection_callback=on_detect)
-            await scanner.start()
-            # Wait up to 20s for detection
-            for _ in range(40):
-                if cobra_device:
-                    break
-                await asyncio.sleep(0.5)
-            await scanner.stop()
-        except Exception as e:
-            log(f"Scan error: {e}")
-
-        if not cobra_device:
-            await asyncio.sleep(10)
-
-    # Phase 2: Connect
-    log("Connecting to Cobra...")
     try:
-        with open(SAVED_ADDR_FILE, "w") as f:
-            f.write(cobra_device.address)
+        asyncio.run(_scan())
     except: pass
+    return found[0]
+
+
+def connect_and_read(addr):
+    """Connect via pygatt/gatttool and read data continuously."""
+    import pygatt
+
+    adapter = pygatt.GATTToolBackend()
+    adapter.start(reset_on_start=False)
+
+    log(f"Connecting via gatttool: {addr}")
+    device = None
+    try:
+        device = adapter.connect(addr, timeout=15, address_type=pygatt.BLEAddressType.public)
+        log("CONNECTED!")
+        write_data({"connected": True, "status": "connected"})
+
+        alert = None
+        strength = 0
+        gps_lat = gps_lon = 0.0
+        gps_speed = gps_heading = 0
+
+        # Subscribe to alert notifications
+        def on_alert(handle, value):
+            nonlocal alert, strength
+            if len(value) >= 1:
+                band = BAND_MAP.get(value[0], "")
+                if band:
+                    alert = band
+                    strength = min(value[1] if len(value) > 1 else 0, 10)
+                    log(f"ALERT: {band} str={strength}")
+                elif value[0] == 0:
+                    if alert:
+                        log("Alert cleared")
+                    alert = None
+                    strength = 0
+
+        def on_gps(handle, value):
+            nonlocal gps_lat, gps_lon, gps_speed, gps_heading
+            try:
+                if len(value) >= 12:
+                    gps_lat = struct.unpack("<i", value[0:4])[0] / 1e7
+                    gps_lon = struct.unpack("<i", value[4:8])[0] / 1e7
+                    gps_speed = struct.unpack("<H", value[8:10])[0]
+                    gps_heading = struct.unpack("<H", value[10:12])[0]
+                elif len(value) >= 6:
+                    gps_lat = struct.unpack("<i", value[0:4])[0] / 1e6
+                    gps_lon = struct.unpack("<h", value[4:6])[0] / 1e4
+                if gps_lat != 0:
+                    write_gps(gps_lat, gps_lon, gps_speed, gps_heading)
+            except: pass
+
+        # Subscribe using UUID strings (pygatt handles lookup)
+        try:
+            device.subscribe("b5e22deb-31ee-42ab-be6a-9be0837aa344", callback=on_alert)
+            log("Subscribed to alert notifications")
+        except Exception as e:
+            log(f"Alert subscribe err: {e}")
+
+        try:
+            device.subscribe("0000fe51-8e22-4541-9d4c-21edae82ed19", callback=on_gps)
+            log("Subscribed to GPS notifications")
+        except Exception as e:
+            log(f"GPS subscribe err: {e}")
+
+        # Main read loop
+        while True:
+            try:
+                raw = device.char_read("b5e22deb-31ee-42ab-be6a-9be0837aa344")
+                on_alert(None, raw)
+            except Exception as e:
+                log(f"Alert read err: {e}")
+                break
+
+            try:
+                raw = device.char_read("0000fe51-8e22-4541-9d4c-21edae82ed19")
+                on_gps(None, raw)
+            except Exception as e:
+                log(f"GPS read err: {e}")
+
+            write_data({
+                "connected": True, "status": "active",
+                "alert": alert, "alert_strength": strength,
+                "alert_raw": raw.hex() if raw else "",
+                "gps_lat": gps_lat, "gps_lon": gps_lon,
+                "gps_speed": gps_speed, "gps_heading": gps_heading,
+            })
+
+            time.sleep(0.5)
+
+    except Exception as e:
+        log(f"Connection error: {e}")
+        write_data({"connected": False, "status": str(e)[:50]})
+    finally:
+        if device:
+            try: device.disconnect()
+            except: pass
+        try: adapter.stop()
+        except: pass
+
+
+def main():
+    log("Cobra RAD 700i service starting (pygatt)...")
+    write_data({"connected": False, "status": "starting"})
 
     while True:
+        # Try saved address first
+        addr = None
         try:
-            client = BleakClient(cobra_device, timeout=15)
-            await client.connect()
+            with open(SAVED_ADDR_FILE) as f:
+                addr = f.read().strip()
+        except: pass
 
-            if not client.is_connected:
-                raise Exception("Connect returned but not connected")
+        if not addr:
+            log("Scanning for Cobra...")
+            addr = scan_for_cobra()
 
-            log("Cobra CONNECTED!")
-            write_data({"connected": True, "status": "connected"})
+        if addr:
+            connect_and_read(addr)
+        else:
+            log("Cobra not found, retrying in 15s...")
+            write_data({"connected": False, "status": "not found"})
 
-            # Subscribe to notifications
-            alert = None
-            strength = 0
-            gps_lat = gps_lon = gps_speed = gps_heading = 0
-
-            def on_alert(sender, data):
-                nonlocal alert, strength
-                if len(data) >= 1:
-                    band = BAND_MAP.get(data[0], "")
-                    if band:
-                        alert = band
-                        strength = min(data[1] if len(data) > 1 else 0, 10)
-                        log(f"ALERT: {band} str={strength}")
-                    elif data[0] == 0:
-                        alert = None
-                        strength = 0
-
-            def on_gps(sender, data):
-                nonlocal gps_lat, gps_lon, gps_speed, gps_heading
-                try:
-                    if len(data) >= 12:
-                        gps_lat = struct.unpack("<i", data[0:4])[0] / 1e7
-                        gps_lon = struct.unpack("<i", data[4:8])[0] / 1e7
-                        gps_speed = struct.unpack("<H", data[8:10])[0]
-                        gps_heading = struct.unpack("<H", data[10:12])[0]
-                    elif len(data) >= 6:
-                        gps_lat = struct.unpack("<i", data[0:4])[0] / 1e6
-                        gps_lon = struct.unpack("<h", data[4:6])[0] / 1e4
-                    if gps_lat != 0:
-                        write_gps(gps_lat, gps_lon, gps_speed, gps_heading)
-                except: pass
-
-            try:
-                await client.start_notify(ALERT_CHAR, on_alert)
-            except Exception as e:
-                log(f"Alert notify: {e}")
-
-            try:
-                await client.start_notify(GPS_CHAR, on_gps)
-            except Exception as e:
-                log(f"GPS notify: {e}")
-
-            # Main loop
-            while client.is_connected:
-                try:
-                    raw = await client.read_gatt_char(ALERT_CHAR)
-                    on_alert(None, raw)
-                except: pass
-
-                try:
-                    raw = await client.read_gatt_char(GPS_CHAR)
-                    on_gps(None, raw)
-                except: pass
-
-                write_data({
-                    "connected": True, "status": "active",
-                    "alert": alert, "alert_strength": strength,
-                    "gps_lat": gps_lat, "gps_lon": gps_lon,
-                    "gps_speed": gps_speed, "gps_heading": gps_heading,
-                })
-                await asyncio.sleep(0.5)
-
-        except Exception as e:
-            log(f"Error: {e}")
-            write_data({"connected": False, "status": str(e)[:50]})
-
-        # If disconnected, go back to scanning
-        log("Disconnected — scanning again...")
-        cobra_device = None
-        while not cobra_device:
-            try:
-                scanner = BleakScanner(detection_callback=on_detect)
-                await scanner.start()
-                for _ in range(40):
-                    if cobra_device: break
-                    await asyncio.sleep(0.5)
-                await scanner.stop()
-            except: pass
-            if not cobra_device:
-                await asyncio.sleep(10)
+        time.sleep(15)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
