@@ -15,17 +15,31 @@ _data = {"temp": "", "desc": "", "icon": "", "city": "", "last_fetch": 0, "ok": 
 _fetching = False
 
 
+def _get_location():
+    """Get GPS from shared GPS file (Cobra, future GPS module, etc)."""
+    try:
+        with open("/tmp/car-hud-gps") as f:
+            d = json.load(f)
+        lat = d.get("lat", 0)
+        lon = d.get("lon", 0)
+        if lat != 0 and lon != 0 and time.time() - d.get("timestamp", 0) < 300:
+            return f"{lat},{lon}"
+    except Exception:
+        pass
+    return ""  # fall back to IP geolocation
+
+
 def _fetch_weather():
-    """Fetch weather from wttr.in (uses IP geolocation)."""
+    """Fetch weather — uses Cobra GPS if available, else IP geolocation."""
     global _fetching
     if _fetching:
         return
     _fetching = True
     try:
         import urllib.request
-        req = urllib.request.Request(
-            "https://wttr.in/?format=j1",
-            headers={"User-Agent": "Car-HUD/1.0"})
+        loc = _get_location()
+        url = f"https://wttr.in/{loc}?format=j1" if loc else "https://wttr.in/?format=j1"
+        req = urllib.request.Request(url, headers={"User-Agent": "Car-HUD/1.0"})
         resp = urllib.request.urlopen(req, timeout=10)
         d = json.loads(resp.read())
 

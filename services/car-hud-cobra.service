@@ -1,0 +1,14 @@
+[Unit]
+Description=Car-HUD Cobra RAD 700i Radar Detector
+After=bluetooth.service car-hud-obd.service
+Wants=bluetooth.service
+
+[Service]
+Type=simple
+User=chrismslist
+ExecStart=/usr/bin/python3 -u /home/chrismslist/car-hud/cobra_service.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

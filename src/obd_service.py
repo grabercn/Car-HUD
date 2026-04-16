@@ -183,6 +183,13 @@ class BleOBD:
                 continue
 
             try:
+                # Signal other BLE services that OBD is using the radio
+                try:
+                    with open("/tmp/car-hud-obd-ble-lock", "w") as lf:
+                        lf.write(str(time.time()))
+                except Exception:
+                    pass
+
                 async with BleakClient(addr, timeout=15) as client:
                     if not client.is_connected:
                         continue
