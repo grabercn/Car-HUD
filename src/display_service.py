@@ -66,86 +66,96 @@ class DisplayController:
         self.lux = 0
 
     def setup_pwm(self):
-        """Initialize hardware PWM on GPIO 18."""
+        """Initialize hardware PWM on GPIO 18 — flicker-free."""
+        # Priority 1: sysfs hardware PWM (zero flicker, kernel-level)
+        try:
+            self._setup_sysfs_pwm()
+            return True
+        except Exception as e:
+            log(f"sysfs PWM failed: {e}")
+
+        # Priority 2: pigpio (hardware PWM via daemon, no flicker)
+        try:
+            import pigpio
+            self._pi = pigpio.pi()
+            if self._pi.connected:
+                self._pi.set_PWM_frequency(PWM_PIN, PWM_FREQ)
+                self._pi.set_PWM_range(PWM_PIN, 1000)
+                self._pi.set_PWM_dutycycle(PWM_PIN, int(self.brightness * 10))
+                self.pwm = "pigpio"
+                log(f"pigpio hardware PWM on GPIO {PWM_PIN} at {self.brightness}%")
+                return True
+        except Exception as e:
+            log(f"pigpio failed: {e}")
+
+        # Priority 3: RPi.GPIO software PWM (may flicker)
         try:
             import RPi.GPIO as GPIO
             GPIO.setmode(GPIO.BCM)
             GPIO.setwarnings(False)
             GPIO.setup(PWM_PIN, GPIO.OUT)
-            self.pwm = GPIO.PWM(PWM_PIN, PWM_FREQ)
+            self.pwm = GPIO.PWM(PWM_PIN, 10000)  # 10kHz reduces flicker
             self.pwm.start(self.brightness)
-            log(f"PWM initialized on GPIO {PWM_PIN} at {self.brightness}%")
+            log(f"RPi.GPIO PWM on GPIO {PWM_PIN} at {self.brightness}% (10kHz)")
             return True
-        except ImportError:
-            log("RPi.GPIO not available — trying gpiozero")
-            try:
-                from gpiozero import PWMLED
-                self.pwm_led = PWMLED(PWM_PIN)
-                self.pwm_led.value = self.brightness / 100
-                log(f"gpiozero PWM on GPIO {PWM_PIN} at {self.brightness}%")
-                return True
-            except Exception as e:
-                log(f"gpiozero failed: {e}")
         except Exception as e:
-            log(f"PWM setup failed: {e}")
-            # Fallback: try sysfs PWM
-            try:
-                self._setup_sysfs_pwm()
-                return True
-            except Exception as e2:
-                log(f"sysfs PWM also failed: {e2}")
+            log(f"RPi.GPIO failed: {e}")
+
         return False
 
     def _setup_sysfs_pwm(self):
-        """Fallback: use sysfs PWM interface."""
+        """Hardware PWM via sysfs — zero flicker, kernel-driven."""
+        # Enable PWM overlay if needed
         pwm_path = "/sys/class/pwm/pwmchip0"
         if not os.path.exists(pwm_path):
-            raise Exception("No PWM chip found")
+            # Try enabling the overlay
+            os.system("sudo dtoverlay pwm pin=18 func=2 2>/dev/null")
+            time.sleep(0.5)
+            if not os.path.exists(pwm_path):
+                raise Exception("No PWM chip — add dtoverlay=pwm to config.txt")
 
-        # Export PWM channel 0 (GPIO 18)
-        export_path = f"{pwm_path}/export"
+        # Export PWM channel 0
         if not os.path.exists(f"{pwm_path}/pwm0"):
-            with open(export_path, "w") as f:
+            with open(f"{pwm_path}/export", "w") as f:
                 f.write("0")
             time.sleep(0.1)
 
-        # Set period (1ms = 1000Hz)
+        # 10kHz = 100000ns period (high frequency = no visible flicker)
         with open(f"{pwm_path}/pwm0/period", "w") as f:
-            f.write("1000000")  # nanoseconds
+            f.write("100000")
 
-        # Set duty cycle
-        duty = int(self.brightness / 100 * 1000000)
+        duty = int(self.brightness / 100 * 100000)
         with open(f"{pwm_path}/pwm0/duty_cycle", "w") as f:
             f.write(str(duty))
 
-        # Enable
         with open(f"{pwm_path}/pwm0/enable", "w") as f:
             f.write("1")
 
-        log(f"sysfs PWM enabled at {self.brightness}%")
         self.pwm = "sysfs"
+        log(f"sysfs hardware PWM at {self.brightness}% (10kHz, flicker-free)")
 
     def set_brightness(self, level):
-        """Set brightness 0-100%."""
-        level = max(0, min(100, int(level)))
+        """Set brightness 0-100% — smooth, no flicker."""
+        level = max(1, min(100, int(level)))  # min 1% to avoid fully off
         self.brightness = level
 
         if self.pwm == "sysfs":
             try:
-                duty = int(level / 100 * 1000000)
+                duty = int(level / 100 * 100000)
                 with open("/sys/class/pwm/pwmchip0/pwm0/duty_cycle", "w") as f:
                     f.write(str(duty))
+            except Exception:
+                pass
+        elif self.pwm == "pigpio":
+            try:
+                self._pi.set_PWM_dutycycle(PWM_PIN, int(level * 10))
             except Exception:
                 pass
         elif self.pwm:
             try:
                 self.pwm.ChangeDutyCycle(level)
-            except AttributeError:
-                # gpiozero
-                try:
-                    self.pwm_led.value = level / 100
-                except Exception:
-                    pass
+            except Exception:
+                pass
 
         log(f"Brightness: {level}%")
         save_brightness(level)
