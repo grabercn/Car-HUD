@@ -72,6 +72,12 @@ input:focus,select:focus{outline:none;border-color:var(--accent)}
 <option value="day">Day</option><option value="night">Night</option>
 </select></div></div>
 
+<h2>Display</h2>
+<div class="card">
+<div class="row"><span>Brightness</span><span id="br-val">80%</span></div>
+<input type="range" id="br-slider" min="1" max="100" value="80" oninput="setBr(this.value)" style="width:100%">
+</div>
+
 <h2>Widgets</h2>
 <div class="card" id="wdg">Loading...</div>
 
@@ -143,7 +149,12 @@ await fetch('/api/widget/set',{method:'POST',body:'name='+encodeURIComponent(n)+
 
 async function loadTheme(){try{const d=await(await fetch('/api/theme')).json();const s=$('ts');if(d.auto)s.value='auto';else if(d.theme)s.value=d.theme}catch(e){}}
 
-load();loadW();loadTheme();setInterval(load,4000);
+async function loadBr(){try{const d=await(await fetch('/api/brightness')).json();$('br-slider').value=d.brightness;$('br-val').textContent=d.brightness+'%'}catch(e){}}
+
+let brTimer=null;
+function setBr(v){$('br-val').textContent=v+'%';clearTimeout(brTimer);brTimer=setTimeout(async()=>{await fetch('/api/brightness/set',{method:'POST',body:'level='+v});L('Brightness: '+v+'%')},200)}
+
+load();loadW();loadTheme();loadBr();setInterval(load,4000);
 </script></body></html>"""
 
 #!/usr/bin/env python3
@@ -333,6 +344,8 @@ class Handler(BaseHTTPRequestHandler):
             self.api_get_theme()
         elif path == "/api/widgets":
             self.api_get_widgets()
+        elif path == "/api/brightness":
+            self.api_get_brightness()
         elif path == "/status":
             self.serve_status()
         else:
@@ -708,6 +721,19 @@ a{{color:#0af}}
             self._json_response({"ok": True})
             return
 
+        if path == "/api/brightness/set":
+            level = int(params.get("level", ["80"])[0])
+            try:
+                with open("/home/chrismslist/car-hud/.brightness", "w") as f:
+                    json.dump({"brightness": max(0, min(100, level))}, f)
+                # Signal the display service
+                with open("/tmp/car-hud-voice-signal", "w") as f:
+                    json.dump({"action": "brightness", "target": str(level), "time": time.time()}, f)
+                self._json_response({"success": True, "brightness": level})
+            except Exception as e:
+                self._json_response({"success": False, "error": str(e)})
+            return
+
         if path == "/api/wifi/connect":
             ssid = params.get("ssid", [""])[0]
             pw = params.get("password", [""])[0]
@@ -909,6 +935,13 @@ inp.focus();
                 self._json_response(json.load(f))
         except:
             self._json_response({"theme": "blue", "auto": True})
+
+    def api_get_brightness(self):
+        try:
+            with open("/tmp/car-hud-display-data") as f:
+                self._json_response(json.load(f))
+        except Exception:
+            self._json_response({"brightness": 80})
 
     def api_get_widgets(self):
         try:

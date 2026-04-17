@@ -220,6 +220,11 @@ class DisplayController:
             # Check voice/web commands
             self.check_commands()
 
+            # Check if brightness file was updated by web UI
+            saved = load_brightness()
+            if saved != self.brightness:
+                self.set_brightness(saved)
+
             # Auto brightness from lux sensor
             if self.auto_mode and LUX_ENABLED:
                 self.lux = self.read_lux()
