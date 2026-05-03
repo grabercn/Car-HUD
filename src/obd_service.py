@@ -424,17 +424,13 @@ class BleOBD:
                             "timestamp": time.time()
                         })
 
-                        # SLOW group: Fuel, Battery, Temps — every 3rd cycle
-                        if cycle % 3 == 0 and len(PID_GROUPS) > 1:
-                            slow_group = PID_GROUPS[1]
-                            cmd = "".join(slow_group)
-                            resp = await self.send(client, cmd, 3)
-                            if "NO DATA" in resp or "ERROR" in resp or not resp:
-                                for pid in slow_group:
-                                    resp = await self.send(client, pid, 2)
-                                    data.update(self.parse_group_response(resp, [pid]))
-                            else:
-                                data.update(self.parse_group_response(resp, slow_group))
+                        # SLOW group: read INDIVIDUALLY (grouped commands fail on this adapter)
+                        if cycle % 3 == 0:
+                            for pid in PID_GROUPS[1]:
+                                resp = await self.send(client, pid, 2)
+                                parsed = self.parse_group_response(resp, [pid])
+                                if parsed:
+                                    data.update(parsed)
 
                         # Only warn on critical overheating
                         cool = data.get("COOLANT_TEMP", 0)
