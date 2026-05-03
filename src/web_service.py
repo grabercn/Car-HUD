@@ -532,7 +532,9 @@ a{{color:#0af}}
             filename = unquote(path.split("/dashcam/video/")[1])
             filepath = os.path.join(DASHCAM_DIR, filename)
 
-        if not os.path.exists(filepath) or ".." in filename:
+        # Security: verify path is within dashcam directory
+        real_path = os.path.realpath(filepath)
+        if not real_path.startswith(os.path.realpath(DASHCAM_DIR)) or not os.path.exists(real_path):
             self.send_response(404)
             self.end_headers()
             return

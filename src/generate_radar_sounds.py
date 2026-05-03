@@ -68,16 +68,16 @@ def gen_wav(filename, freq, duration=0.5, volume=0.8, pattern="steady"):
     print(f"Generated: {filename}")
 
 
-# Generate sounds for each band
-sounds = {
-    "radar_x.wav": (800, 0.4, "steady"),       # X band — low tone
-    "radar_k.wav": (1200, 0.4, "chirp"),        # K band — rising chirp
-    "radar_ka.wav": (1600, 0.5, "urgent"),       # Ka band — urgent alternating
-    "radar_laser.wav": (2400, 0.3, "laser"),     # Laser — rapid high beeps
-    "radar_alert.wav": (1000, 0.5, "pulse"),     # Generic alert
-}
-
-for fname, (freq, dur, pat) in sounds.items():
-    gen_wav(os.path.join(INSTALL_DIR, fname), freq, dur, 0.7, pat)
+if __name__ == "__main__":
+    sounds = {
+        "radar_x.wav": (800, 0.4, "steady"),
+        "radar_k.wav": (1200, 0.4, "chirp"),
+        "radar_ka.wav": (1600, 0.5, "urgent"),
+        "radar_laser.wav": (2400, 0.3, "laser"),
+        "radar_alert.wav": (1000, 0.5, "pulse"),
+    }
+    for fname, (freq, dur, pat) in sounds.items():
+        gen_wav(os.path.join(INSTALL_DIR, fname), freq, dur, 0.7, pat)
+    print("All radar sounds generated!")
 
 print("All radar sounds generated!")

@@ -30,21 +30,21 @@ def log(msg):
     try:
         with open(LOG_FILE, "a") as f:
             f.write(line + "\n")
-    except: pass
+    except Exception: pass
 
 def write_data(data):
     data["timestamp"] = time.time()
     try:
         with open(SIGNAL_FILE, "w") as f:
             json.dump(data, f)
-    except: pass
+    except Exception: pass
 
 def write_gps(lat, lon, speed=0, heading=0):
     try:
         with open(GPS_FILE, "w") as f:
             json.dump({"lat":lat,"lon":lon,"speed":speed,"heading":heading,
                        "source":"cobra_rad700i","timestamp":time.time()}, f)
-    except: pass
+    except Exception: pass
 
 
 def scan_for_cobra():
@@ -64,12 +64,12 @@ def scan_for_cobra():
                 try:
                     with open(SAVED_ADDR_FILE, "w") as f:
                         f.write(addr)
-                except: pass
+                except Exception: pass
                 return
 
     try:
         asyncio.run(_scan())
-    except: pass
+    except Exception: pass
     return found[0]
 
 
@@ -115,7 +115,7 @@ def connect_and_read(addr):
                                 ["aplay", "-D", "default", "-q",
                                  f"/home/chrismslist/car-hud/{snd}"],
                                 stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
-                        except: pass
+                        except Exception: pass
                 elif value[0] == 0:
                     if alert:
                         log("Alert cleared")
@@ -135,7 +135,7 @@ def connect_and_read(addr):
                     gps_lon = struct.unpack("<h", value[4:6])[0] / 1e4
                 if gps_lat != 0:
                     write_gps(gps_lat, gps_lon, gps_speed, gps_heading)
-            except: pass
+            except Exception: pass
 
         # Subscribe using UUID strings (pygatt handles lookup)
         try:
@@ -181,9 +181,9 @@ def connect_and_read(addr):
     finally:
         if device:
             try: device.disconnect()
-            except: pass
+            except Exception: pass
         try: adapter.stop()
-        except: pass
+        except Exception: pass
 
 
 def main():
@@ -196,7 +196,7 @@ def main():
         try:
             with open(SAVED_ADDR_FILE) as f:
                 addr = f.read().strip()
-        except: pass
+        except Exception: pass
 
         if not addr:
             log("Scanning for Cobra...")
