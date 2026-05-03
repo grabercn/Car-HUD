@@ -48,6 +48,78 @@ def log(msg):
         pass
 
 
+OBD_LOG_DB = "/home/chrismslist/car-hud/obd_log.db"
+_db = None
+_last_log_time = 0
+
+def _init_log_db():
+    """Initialize OBD data log database."""
+    global _db
+    try:
+        import sqlite3
+        _db = sqlite3.connect(OBD_LOG_DB)
+        _db.execute("""CREATE TABLE IF NOT EXISTS obd_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp REAL, date TEXT,
+            connected INTEGER, status TEXT,
+            rpm REAL, speed REAL, engine_load REAL, throttle REAL,
+            fuel_level REAL, hv_battery REAL, coolant_temp REAL,
+            voltage REAL, intake_temp REAL,
+            raw_data TEXT
+        )""")
+        _db.execute("""CREATE TABLE IF NOT EXISTS obd_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp REAL, date TEXT, event TEXT, detail TEXT
+        )""")
+        _db.execute("CREATE INDEX IF NOT EXISTS idx_log_ts ON obd_log(timestamp)")
+        _db.commit()
+        log("OBD data logger initialized")
+    except Exception as e:
+        log(f"DB init failed: {e}")
+
+def _log_obd_data(data):
+    """Record OBD data point every 5 seconds."""
+    global _last_log_time
+    now = time.time()
+    if now - _last_log_time < 5:
+        return
+    _last_log_time = now
+    if not _db:
+        _init_log_db()
+    if not _db:
+        return
+    try:
+        d = data.get("data", {})
+        from datetime import datetime
+        _db.execute("""INSERT INTO obd_log
+            (timestamp, date, connected, status, rpm, speed, engine_load,
+             throttle, fuel_level, hv_battery, coolant_temp, voltage, intake_temp, raw_data)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (now, datetime.now().isoformat(),
+             1 if data.get("connected") else 0, data.get("status", ""),
+             d.get("RPM"), d.get("SPEED"), d.get("ENGINE_LOAD"),
+             d.get("THROTTLE_POS"), d.get("FUEL_LEVEL"),
+             d.get("HYBRID_BATTERY_REMAINING"), d.get("COOLANT_TEMP"),
+             d.get("CONTROL_MODULE_VOLTAGE"), d.get("INTAKE_TEMP"),
+             json.dumps(d)))
+        _db.commit()
+    except Exception:
+        pass
+
+def _log_obd_event(event, detail=""):
+    """Record a notable OBD event (connect, disconnect, engine on/off, etc)."""
+    if not _db:
+        _init_log_db()
+    if not _db:
+        return
+    try:
+        from datetime import datetime
+        _db.execute("INSERT INTO obd_events (timestamp, date, event, detail) VALUES (?,?,?,?)",
+                    (time.time(), datetime.now().isoformat(), event, detail))
+        _db.commit()
+    except Exception:
+        pass
+
 def write_obd(data):
     data["timestamp"] = time.time()
     try:
@@ -55,6 +127,8 @@ def write_obd(data):
             json.dump(data, f)
     except Exception:
         pass
+    # Log to database
+    _log_obd_data(data)
 
 
 # Cobra RAD 700i integration — reads from same BLE session
@@ -316,6 +390,7 @@ class BleOBD:
                         continue
 
                     log("ELM327 ready — reading data")
+                    _log_obd_event("connected", "ELM327 ready")
                     write_obd({"connected": True, "status": "connected", "adapter": "Vgate iCar Pro 2S (BLE)",
                                "data": {}, "warnings": [], "dtcs": []})
 
@@ -397,6 +472,7 @@ class BleOBD:
 
             except Exception as e:
                 log(f"BLE error: {e}")
+                _log_obd_event("disconnected", str(e)[:100])
                 write_obd({"connected": False, "status": "disconnected", "data": {}, "warnings": [], "dtcs": []})
                 write_cobra({"connected": False, "status": "disconnected"})
                 # Disconnect Cobra gracefully
