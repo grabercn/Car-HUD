@@ -13,6 +13,13 @@ RED = (220, 45, 45)
 _SCROLL_PX = 5  # pixels per frame
 
 
+def _draw_pin_icon(s, t, x, y):
+    """Draw a small pin icon at (x, y)."""
+    pygame.draw.circle(s, t["primary"], (x, y + 3), 4)
+    pygame.draw.line(s, t["primary"], (x, y + 7), (x, y + 14), 2)
+    pygame.draw.circle(s, t["primary"], (x, y + 14), 1)
+
+
 def draw(hud, obd, music):
     W, H = hud.width, hud.height
     s = hud.surf
@@ -156,6 +163,10 @@ def draw(hud, obd, music):
             continue
         try:
             active[wi][1].draw(hud, 6, slot_y, W - 12, wh, music)
+            # Pin icon
+            wname = active[wi][0].lower()
+            if wname in (widgets.get_pinned() or []):
+                _draw_pin_icon(s, t, W - 20, slot_y + 4)
         except Exception:
             pass
 

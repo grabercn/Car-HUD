@@ -1210,13 +1210,9 @@ class CarHUD:
                         g = td.get("gesture", "")
                         ty = td.get("y", 0)
                         if g == "tap":
-                            if ty < self.height - 30:
-                                self.page_idx = (self.page_idx + 1) % len(self.page_names)
-                                self.force_page = self.page_names[self.page_idx]
-                            else:
-                                themes = list(THEMES.keys())
-                                ci = themes.index(self.theme_name) if self.theme_name in themes else 0
-                                self.set_theme(themes[(ci + 1) % len(themes)])
+                            # Tap anywhere on main area = switch pages
+                            self.page_idx = (self.page_idx + 1) % len(self.page_names)
+                            self.force_page = self.page_names[self.page_idx]
                         elif g == "long_press":
                             # Pin/unpin the currently visible top widget
                             import widgets as _wp

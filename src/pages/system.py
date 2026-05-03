@@ -6,6 +6,16 @@ import pygame
 import widgets
 
 _PAUSE = 6        # seconds to hold each pair
+
+
+def _draw_pin_icon(s, t, x, y):
+    """Draw a small pin icon at (x, y)."""
+    # Pin head (circle)
+    pygame.draw.circle(s, t["primary"], (x, y + 3), 4)
+    # Pin shaft
+    pygame.draw.line(s, t["primary"], (x, y + 7), (x, y + 14), 2)
+    # Pin point
+    pygame.draw.circle(s, t["primary"], (x, y + 14), 1)
 _SCROLL_PX = 6    # pixels per frame (~90px/sec at 15fps)
 
 
@@ -113,6 +123,10 @@ def draw(hud, stats, music):
             continue
         try:
             active[wi][1].draw(hud, 6, slot_y, W - 12, wh, music)
+            # Pin icon in top-right corner if pinned
+            wname = active[wi][0].lower()
+            if wname in (widgets.get_pinned() or []):
+                _draw_pin_icon(s, t, W - 20, slot_y + 4)
         except Exception:
             pass
 

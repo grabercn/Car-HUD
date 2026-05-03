@@ -98,8 +98,8 @@ def main():
                     dt = now - down_time
 
                     gesture = "tap"
-                    if dt > 1.5 and abs(dx) < 30 and abs(dy) < 30:
-                        gesture = "long_press"  # held for 1.5s+ without moving
+                    if dt > 0.8 and abs(dx) < 60 and abs(dy) < 60:
+                        gesture = "long_press"  # held 0.8s+ without much movement
                     elif dt < 1.0 and abs(dx) > 50:
                         gesture = "swipe_right" if dx > 0 else "swipe_left"
                     elif dt < 1.0 and abs(dy) > 50:
