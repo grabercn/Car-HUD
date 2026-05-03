@@ -1217,6 +1217,17 @@ class CarHUD:
                                 themes = list(THEMES.keys())
                                 ci = themes.index(self.theme_name) if self.theme_name in themes else 0
                                 self.set_theme(themes[(ci + 1) % len(themes)])
+                        elif g == "long_press":
+                            # Pin/unpin the currently visible top widget
+                            import widgets as _wp
+                            active = _wp.get_active(self, music)
+                            if active:
+                                wn = active[0][0].lower()
+                                pinned = _wp.get_pinned()
+                                if wn in pinned:
+                                    _wp.set_pinned(wn, False)
+                                else:
+                                    _wp.set_pinned(wn, True)
                         elif g in ("swipe_left", "swipe_right"):
                             if g == "swipe_right":
                                 self.page_idx = (self.page_idx - 1) % len(self.page_names)
