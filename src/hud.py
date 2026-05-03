@@ -211,6 +211,11 @@ class CarHUD:
         self.page_names = ["system", "vehicle"]
         self.page_idx = 0
 
+        # Pin flash overlay — shows "PINNED" or "UNPINNED" for 2s after pin action
+        self._pin_flash_time = 0
+        self._pin_flash_text = ""
+        self._pin_flash_color = GREEN
+
         # Theme
         self.auto_theme = True
         self.theme_name = self._load_theme()
@@ -1128,8 +1133,15 @@ class CarHUD:
                                 pinned = _wp.get_pinned()
                                 if wn in pinned:
                                     _wp.set_pinned(wn, False)
+                                    self._pin_flash_text = f"UNPINNED: {active[0][0]}"
+                                    self._pin_flash_color = RED
                                 else:
                                     _wp.set_pinned(wn, True)
+                                    self._pin_flash_text = f"PINNED: {active[0][0]}"
+                                    self._pin_flash_color = GREEN
+                                self._pin_flash_time = time.time()
+                                # Invalidate widget cache so pinned order takes effect immediately
+                                _wp._active_cache_time = 0
                         elif g in ("swipe_left", "swipe_right"):
                             if g == "swipe_right":
                                 self.page_idx = (self.page_idx - 1) % len(self.page_names)
@@ -1374,6 +1386,20 @@ class CarHUD:
 
             if self.show_terminal:
                 self.draw_terminal_overlay()
+
+            # Pin flash overlay — brief confirmation after pin/unpin action
+            if self._pin_flash_time and time.time() - self._pin_flash_time < 2.0:
+                flash_alpha = min(1.0, (2.0 - (time.time() - self._pin_flash_time)) / 0.5)
+                flash_surf = pygame.Surface((self.width, 40), pygame.SRCALPHA)
+                a = int(180 * flash_alpha)
+                flash_surf.fill((0, 0, 0, a))
+                self.surf.blit(flash_surf, (0, self.height // 2 - 20))
+                r, g_c, b = self._pin_flash_color
+                text_color = (min(255, int(r * flash_alpha + 60)),
+                              min(255, int(g_c * flash_alpha + 60)),
+                              min(255, int(b * flash_alpha + 60)))
+                ft = self.font_lg.render(self._pin_flash_text, True, text_color)
+                self.surf.blit(ft, ((self.width - ft.get_width()) // 2, self.height // 2 - 14))
 
             self.present()
             self.clock_t.tick(30)

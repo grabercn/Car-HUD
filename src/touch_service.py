@@ -98,11 +98,12 @@ def main():
                     dt = now - down_time
 
                     gesture = "tap"
-                    if dt > 0.8 and abs(dx) < 60 and abs(dy) < 60:
-                        gesture = "long_press"  # held 0.8s+ without much movement
-                    elif dt < 1.0 and abs(dx) > 50:
+                    drift = max(abs(dx), abs(dy))
+                    if dt >= 0.5 and drift < 100:
+                        gesture = "long_press"  # held 0.5s+ without much movement
+                    elif dt < 0.5 and abs(dx) > 50:
                         gesture = "swipe_right" if dx > 0 else "swipe_left"
-                    elif dt < 1.0 and abs(dy) > 50:
+                    elif dt < 0.5 and abs(dy) > 50:
                         gesture = "swipe_down" if dy > 0 else "swipe_up"
 
                     event = {

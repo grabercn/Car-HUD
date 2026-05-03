@@ -168,8 +168,10 @@ const health=d.health!=null?d.health:'--';
 const volts=d.pack_voltage!=null?d.pack_voltage:'--';
 const sc=soc>=50?'g':soc>=20?'a':'r';
 const hc=health>=80?'g':health>=50?'a':'r';
+const hint=d.replacement_hint;
+const hintHtml=hint?'<div class="row"><span class="dim" style="font-size:11px;opacity:0.6">'+hint+'</span></div>':'';
 $('bat').innerHTML='<div class="row"><span class="status"><span class="dot '+sc+'"></span>SOC: '+soc+'%</span><span class="dim">Pack voltage: '+volts+' V</span></div>'
-+'<div class="row"><span class="status"><span class="dot '+hc+'"></span>Health: '+health+'%</span></div>';
++'<div class="row"><span class="status"><span class="dot '+hc+'"></span>Health: '+health+'%</span></div>'+hintHtml;
 }catch(e){$('bat').innerHTML='<div class="dim">Battery unavailable</div>'}}
 
 async function loadRad(){try{

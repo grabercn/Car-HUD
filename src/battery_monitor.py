@@ -13,6 +13,90 @@ Reads available PIDs and derives health metrics:
 Stores historical data in SQLite for trend analysis.
 """
 
+# ============================================================================
+# 2014 Honda Accord Hybrid (9th Gen) -- HV Battery Research Notes
+# ============================================================================
+#
+# PACK CONFIGURATION:
+#   - 72 lithium-ion cells connected in series
+#   - Nominal cell voltage: 3.6V (standard Li-ion NMC range: 2.5V-4.2V)
+#   - Pack nominal voltage: 72 x 3.6V = 259.2V
+#   - Pack voltage range: ~216V (discharged) to ~295.2V (fully charged)
+#   - Total energy capacity: 1.3 kWh
+#   - Estimated cell capacity: ~5 Ah (per Blue Energy EHW-series spec sheets;
+#     1.3 kWh / 259.2V = ~5.015 Ah, consistent with 5Ah cells found in later
+#     Accord Hybrid modules listed at 3.7V/5Ah OEM)
+#
+# CELL CHEMISTRY:
+#   - Lithium-ion (Li-ion), likely NMC (Nickel Manganese Cobalt) or similar
+#   - Manufactured by Blue Energy Co., Ltd. (Honda / GS Yuasa joint venture)
+#   - Blue Energy EHW-series cells, prismatic format
+#   - Cell specs (EHW5 reference): 3.6V nominal, 5Ah, 120mm x 12.5mm x 85mm,
+#     energy density ~78.6 Wh/kg, max current 300A
+#   - Note: the 2014 model predates the EHW5 (introduced 2016); the 2014 uses
+#     an earlier EHW variant with similar chemistry but slightly larger form
+#
+# SOC OPERATING RANGE (Honda BMS strategy):
+#   - Honda limits usable SOC to approximately 20%-80% of true cell capacity
+#   - The reported "0-100%" SOC on the dashboard maps to this ~60% usable window
+#   - This buffer protects cells from deep discharge (<2.5V) and overcharge (>4.2V)
+#   - During highway driving, battery typically cycles between 20-50% displayed SOC
+#   - Honda targets keeping the pack near 50-60% SOC for optimal power availability
+#
+# CELL VOLTAGE RANGES (per cell):
+#   - Nominal: 3.6V
+#   - Fully charged: 4.2V (absolute max, BMS-limited)
+#   - Fully discharged: 2.5V (absolute min cutoff)
+#   - Normal operating range: ~3.0V (BMS low limit) to ~4.1V (BMS high limit)
+#   - Typical cycling range under Honda BMS: ~3.3V to ~3.9V (within SOC window)
+#
+# CELL DELTA VOLTAGE (voltage spread between cells):
+#   - New/healthy pack: <20 mV (0.020V) spread between strongest/weakest cell
+#   - Acceptable aging: <50 mV (0.050V)
+#   - Needs attention: 50-100 mV (0.050-0.100V) -- cell imbalance developing
+#   - Degraded/failing: >100-200 mV (0.100-0.200V) -- replacement likely needed
+#   - The BMS continuously balances cells; rising delta = aging or failed cell
+#
+# OPERATING TEMPERATURE:
+#   - Blue Energy EHW cell rated range: -30C to +55C (-22F to 131F)
+#   - Optimal performance: 20C to 30C (68F to 86F)
+#   - Honda triggers "Battery Temperature at Limit" warning at high temps,
+#     reducing hybrid power to protect the pack
+#   - Cold weather (<0C/32F) reduces effective capacity and regen capability
+#   - Air-cooled battery with dedicated cooling fan behind rear seat
+#
+# EXPECTED LIFESPAN:
+#   - Warranty: 8 years / 100,000 mi (federal); 10 years / 150,000 mi (CARB)
+#   - Real-world: 8-15 years, 100,000-200,000+ miles under normal conditions
+#   - NMC cell cycle life: ~1,000-2,000 full charge/discharge cycles to 80% cap
+#   - At pack level with Honda's conservative SOC window and micro-cycling,
+#     effective cycle life is extended significantly beyond raw cell ratings
+#   - Hybrid packs see many shallow micro-cycles rather than full depth cycles,
+#     which is far less stressful than full charge/discharge cycling
+#
+# KNOWN DEGRADATION PATTERNS:
+#   - Gradual capacity fade: 1-2% per year under normal conditions
+#   - Cell imbalance increases with age -- one weak cell drags down the pack
+#   - High-temperature exposure accelerates degradation (hot climates)
+#   - Reduced regen recovery rate is an early sign of capacity loss
+#   - Erratic SOC readings indicate cell imbalance (BMS reports averaged data)
+#   - Internal resistance increases with age, reducing power output capability
+#   - Frequent stop-and-go + extreme temperatures = fastest degradation path
+#   - Honda Accord Plug-In Hybrid (PHEV) variant had known early battery
+#     deterioration (warranty extended to 12yr/200k mi); standard hybrid
+#     has been more reliable
+#
+# Sources:
+#   - Honda official specs: hondanews.com/en-US/honda-automobiles/releases
+#   - Honda Owners: owners.honda.com/vehicles/information/2014/Accord-Hybrid
+#   - Blue Energy / GS Yuasa: gs-yuasa.com/en/newsrelease
+#   - Honda Emergency Response Guide: honda.ca (2014-2017 Accord Hybrid ERG)
+#   - Greentec Auto technical data: greentecauto.com
+#   - Midtronics hybrid battery diagnostics: midtronics.com/blog
+#   - Battery University: batteryuniversity.com
+#   - DriveAccord forum community data: driveaccord.net
+# ============================================================================
+
 import os
 import json
 import time
@@ -24,13 +108,35 @@ DATA_FILE = "/tmp/car-hud-battery-data"
 DB_PATH = "/home/chrismslist/car-hud/battery_history.db"
 OBD_FILE = "/tmp/car-hud-obd-data"
 
-# 2014 Honda Accord Hybrid specs
-PACK_CELLS = 72
-CELL_NOMINAL_V = 3.6
-PACK_NOMINAL_V = PACK_CELLS * CELL_NOMINAL_V  # ~259.2V
-PACK_MIN_V = PACK_CELLS * 3.0   # ~216V (discharged)
-PACK_MAX_V = PACK_CELLS * 4.1   # ~295.2V (fully charged)
-CAPACITY_KWH = 1.3
+# 2014 Honda Accord Hybrid specs (verified via research -- see notes above)
+PACK_CELLS = 72                                  # 72 cells in series
+CELL_NOMINAL_V = 3.6                             # Li-ion NMC nominal voltage
+PACK_NOMINAL_V = PACK_CELLS * CELL_NOMINAL_V     # 259.2V nominal
+PACK_MIN_V = PACK_CELLS * 3.0                    # ~216V (BMS low cutoff)
+PACK_MAX_V = PACK_CELLS * 4.1                    # ~295.2V (BMS high limit)
+CAPACITY_KWH = 1.3                               # Total pack energy
+FACTORY_CAPACITY_AH = 5.0                        # ~5Ah per cell (1.3kWh / 259.2V)
+
+# Factory-new reference values (2014 Accord Hybrid when new)
+FACTORY_SOC_RANGE = (20, 80)   # Honda BMS usable SOC window (% of true capacity)
+FACTORY_SOC_MIN = 20           # Honda BMS floor -- never discharges below 20%
+FACTORY_SOC_MAX = 80           # Honda BMS ceiling -- never charges above 80%
+FACTORY_CELL_DELTA_V = 0.020   # New pack cell spread: <20mV between min/max cell
+FACTORY_CELL_DELTA = 0.02      # Alias for backward compatibility
+FACTORY_HEALTH = 100           # Perfect health score baseline
+
+# Cell voltage thresholds (per-cell, not pack)
+CELL_MIN_V = 2.5               # Absolute minimum (BMS hard cutoff)
+CELL_MAX_V = 4.2               # Absolute maximum (BMS hard cutoff)
+CELL_OPERATING_MIN_V = 3.0     # BMS soft low limit during normal use
+CELL_OPERATING_MAX_V = 4.1     # BMS soft high limit during normal use
+
+# Expected lifespan
+EXPECTED_CYCLE_LIFE = (1000, 2000)  # Full cycles to 80% capacity (NMC cell-level)
+
+# Operating temperature (Celsius)
+NORMAL_TEMP_RANGE = (-30, 55)       # Blue Energy EHW rated range
+OPTIMAL_TEMP_RANGE = (20, 30)       # Best performance / longevity window
 
 # Recording interval
 RECORD_INTERVAL = 30  # seconds between database writes
@@ -122,6 +228,23 @@ class BatteryMonitor:
             "session_kwh": 0,
             "session_regen_pct": 0,
         }
+
+    def _replacement_hint(self, health_score, cell_delta):
+        """Subtle replacement nudge based on health metrics.
+
+        Returns None when healthy, or a quiet one-word hint:
+          "Monitor" — keep an eye on it
+          "Plan"    — start planning replacement
+          "Soon"    — replacement recommended
+        """
+        # Worst-case tier wins (health OR cell_delta can trigger independently)
+        if health_score < 30 or cell_delta > 0.3:
+            return "Soon"
+        if health_score < 50 or cell_delta > 0.2:
+            return "Plan"
+        if health_score < 70 or cell_delta > 0.1:
+            return "Monitor"
+        return None
 
     def read_obd(self):
         """Read OBD data and extract battery metrics."""
@@ -341,6 +464,13 @@ class BatteryMonitor:
             "voltage_stability": round(self.voltage_stability, 2),
             "voltage_trend": [v for _, v in self.voltage_history[-30:]],
             "soc_trend": [s for _, s in self.soc_history[-30:]],
+            # Factory reference values for widget comparison
+            "factory_soc_min": FACTORY_SOC_MIN,
+            "factory_soc_max": FACTORY_SOC_MAX,
+            "factory_cell_delta": FACTORY_CELL_DELTA,
+            "factory_health": FACTORY_HEALTH,
+            # Subtle replacement hint — None when healthy
+            "replacement_hint": self._replacement_hint(health, cell_delta),
         })
 
         return self.current_data

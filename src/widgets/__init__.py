@@ -20,6 +20,7 @@ _online_check_time = 0
 _active_cache = []
 _active_cache_time = 0
 _last_shown = {}  # widget name → last time it was displayed
+_last_urgency_event = 0  # timestamp of last urgency-driven reorder
 
 _widgets = []
 _loaded = False
@@ -80,10 +81,10 @@ def is_online():
 
 
 def get_active(hud, music):
-    """Return active widgets sorted by priority. Cached for 2 seconds."""
-    global _active_cache, _active_cache_time
+    """Return active widgets sorted by priority. Cached for 1 second."""
+    global _active_cache, _active_cache_time, _last_urgency_event
     now = time.time()
-    if now - _active_cache_time < 2 and _active_cache:
+    if now - _active_cache_time < 1 and _active_cache:
         return _active_cache
 
     _load_widgets()
@@ -140,7 +141,13 @@ def get_active(hud, music):
             return -999 + eff  # pinned always first
         return eff
     active.sort(key=sort_key)
-    _active_cache = [(name, mod) for _, name, mod in active]
+    new_order = [(name, mod) for _, name, mod in active]
+    # Detect urgency-driven reorder: compare top-2 widget names
+    old_top2 = [w[0] for w in _active_cache[:2]]
+    new_top2 = [w[0] for w in new_order[:2]]
+    if new_top2 != old_top2 and _active_cache:
+        _last_urgency_event = now
+    _active_cache = new_order
     _active_cache_time = now
     return _active_cache
 
@@ -176,6 +183,7 @@ def get_pinned():
 
 def set_pinned(widget_name, pinned):
     """Pin or unpin a widget. Pinned widgets always show first."""
+    global _active_cache_time
     pins = get_pinned()
     wn = widget_name.lower()
     if pinned and wn not in pins:
@@ -183,7 +191,14 @@ def set_pinned(widget_name, pinned):
     elif not pinned and wn in pins:
         pins.remove(wn)
     try:
+        # Ensure parent directory exists
+        pin_dir = os.path.dirname(PINNED_FILE)
+        if pin_dir and not os.path.isdir(pin_dir):
+            os.makedirs(pin_dir, exist_ok=True)
         with open(PINNED_FILE, "w") as f:
             json.dump(pins, f)
-    except Exception:
-        pass
+        print(f"[widgets] Pinned state saved: {pins}", flush=True)
+    except Exception as e:
+        print(f"[widgets] ERROR saving pinned state to {PINNED_FILE}: {e}", flush=True)
+    # Invalidate active widget cache so new pin order takes effect immediately
+    _active_cache_time = 0

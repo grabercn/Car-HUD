@@ -11,6 +11,7 @@ AMBER = (220, 160, 0)
 RED = (220, 45, 45)
 
 _SCROLL_PX = 5  # pixels per frame
+_HIGHLIGHT_FRAMES = 10  # frames to show border on newly-appeared widgets
 
 
 def _draw_pin_icon(s, t, x, y):
@@ -174,27 +175,66 @@ def draw(hud, obd, music):
         draw._offset = 0.0
         draw._target = 0
         draw._pause_end = time.time() + 6
-        draw._last_top = ""
+        draw._last_top2 = []
+        draw._last_n = n
+        draw._resetting = False
+        draw._widget_age = {}  # name -> frames since first appeared
+        draw._pop_frames = 0   # remaining frames of pop-in slide effect
 
-    # Interrupt on priority change
-    top_name = active[0][0] if active else ""
-    if top_name != draw._last_top:
-        draw._last_top = top_name
-        draw._offset = 0.0
+    # Track widget ages (frames since first appearance)
+    active_names = {name for name, _ in active}
+    for name in active_names:
+        draw._widget_age[name] = draw._widget_age.get(name, 0) + 1
+    for name in list(draw._widget_age):
+        if name not in active_names:
+            del draw._widget_age[name]
+
+    # If widget count changed mid-scroll, clamp offset and smooth-reset
+    if n != draw._last_n:
+        max_off = max(0, (n - 1) * wh)
+        draw._offset = min(draw._offset, max_off)
+        draw._target = min(draw._target, max_off)
+        draw._resetting = True
+        draw._target = 0
+        draw._last_n = n
+
+    # Interrupt: top-2 priority order changed (new song, radar alert, etc.)
+    # Checks both top widget AND runner-up so promotions to #2 also trigger
+    top2 = [w[0] for w in active[:2]]
+    if top2 != draw._last_top2:
+        draw._last_top2 = top2
+        draw._resetting = True
         draw._target = 0
         draw._pause_end = now_t + getattr(active[0][1], "view_time", 6)
+        draw._pop_frames = 4  # trigger slide-up pop effect
 
     # Current widget's view_time for pause
     cur_wi = int(draw._offset / wh) % n if wh > 0 else 0
     pause = getattr(active[cur_wi][1], "view_time", 6)
 
-    if draw._offset >= draw._target:
+    # Phase: resetting (smooth scroll-back), pausing, or scrolling forward
+    if draw._resetting:
+        draw._offset = max(draw._offset - _SCROLL_PX * 2, 0.0)
+        if draw._offset <= 0:
+            draw._offset = 0.0
+            draw._target = 0
+            draw._resetting = False
+            draw._pause_end = now_t + pause
+    elif draw._offset >= draw._target:
         if now_t >= draw._pause_end:
             draw._target += wh
     else:
         draw._offset = min(draw._offset + _SCROLL_PX, draw._target)
         if draw._offset >= draw._target:
             draw._pause_end = now_t + pause
+
+    # Pop-in effect: slide up from 8px below over 4 frames, plus border flash
+    pop_offset = 0
+    pop_border = False
+    if draw._pop_frames > 0:
+        pop_offset = draw._pop_frames * 2  # 8, 6, 4, 2 px slide-up
+        pop_border = draw._pop_frames >= 3  # border flash for first 2 frames
+        draw._pop_frames -= 1
 
     # Clip and draw
     clip = pygame.Rect(6, wly, W - 12, wh)
@@ -204,13 +244,22 @@ def draw(hud, obd, music):
     offset = int(draw._offset)
     for i in range(n * 2):
         wi = i % n
-        slot_y = wly + i * wh - offset
+        slot_y = wly + i * wh - offset + pop_offset
         if slot_y > wly + wh:
             break
         if slot_y + wh < wly:
             continue
         try:
             active[wi][1].draw(hud, 6, slot_y, W - 12, wh, music)
+            # Pop-in border flash (primary color, 2 frames)
+            if pop_border:
+                pygame.draw.rect(s, t["primary"],
+                                 (6, slot_y, W - 12, wh), 2)
+            # Highlight border for newly-appeared widgets
+            age = draw._widget_age.get(active[wi][0], _HIGHLIGHT_FRAMES + 1)
+            if age <= _HIGHLIGHT_FRAMES and not pop_border:
+                pygame.draw.rect(s, t["primary"],
+                                 (6, slot_y, W - 12, wh), 1)
             # Pin icon
             wname = active[wi][0].lower()
             if wname in (widgets.get_pinned() or []):
@@ -224,4 +273,5 @@ def draw(hud, obd, music):
     if draw._offset >= n * wh:
         draw._offset = 0.0
         draw._target = 0
+        draw._resetting = False
         draw._pause_end = now_t + pause
