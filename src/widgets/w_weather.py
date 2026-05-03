@@ -1,15 +1,28 @@
-"""Weather widget — current conditions via wttr.in (no API key needed)."""
+"""Weather widget -- current conditions via wttr.in (no API key needed).
+
+Fetches weather data in a background thread using GPS coordinates (from the
+Cobra RAD 700i) when available, otherwise falls back to IP geolocation.
+Renders a weather icon, temperature, description, humidity, wind, and city.
+"""
 
 import json
 import time
 import threading
 import pygame
 
+try:
+    from config import GPS_DATA, GREEN, AMBER, RED
+except ImportError:
+    GPS_DATA = "/tmp/car-hud-gps"
+    GREEN = (0, 180, 85)
+    AMBER = (220, 160, 0)
+    RED = (220, 45, 45)
+
 name = "Weather"
 priority = 25
 view_time = 6
 requires_online = True
-show_every = 180  # show once every 3 minutes — data doesn't change fast
+show_every = 180  # show once every 3 minutes -- data doesn't change fast
 
 _data = {"temp": "", "desc": "", "icon": "", "city": "", "last_fetch": 0, "ok": False}
 _fetching = False
@@ -18,7 +31,7 @@ _fetching = False
 def _get_location():
     """Get GPS from shared GPS file (Cobra, future GPS module, etc)."""
     try:
-        with open("/tmp/car-hud-gps") as f:
+        with open(GPS_DATA) as f:
             d = json.load(f)
         lat = d.get("lat", 0)
         lon = d.get("lon", 0)
@@ -65,24 +78,32 @@ def _fetch_weather():
 
 
 def is_active(hud, music):
-    # Trigger fetch if needed
-    if _data["last_fetch"] == 0:
-        # First time — try synchronous, fall back to background
-        _fetch_weather()
-        if not _data["ok"]:
-            # Mark as attempted so we don't block every frame
-            _data["last_fetch"] = time.time()
-    elif time.time() - _data["last_fetch"] > 300:
-        # Refresh every 5 min in background
-        threading.Thread(target=_fetch_weather, daemon=True).start()
-    return _data["ok"]
+    """Return True when weather data has been successfully fetched.
+
+    Also triggers background fetches when data is stale (>5 min).
+    """
+    try:
+        if _data["last_fetch"] == 0:
+            # First time -- try synchronous, fall back to background
+            _fetch_weather()
+            if not _data["ok"]:
+                # Mark as attempted so we don't block every frame
+                _data["last_fetch"] = time.time()
+        elif time.time() - _data["last_fetch"] > 300:
+            # Refresh every 5 min in background
+            threading.Thread(target=_fetch_weather, daemon=True).start()
+        return bool(_data["ok"])
+    except Exception:
+        return False
 
 
 def urgency(hud, music):
+    """Weather is informational -- neutral urgency."""
     return 0
 
 
 def draw(hud, x, y, w, h, music):
+    """Render weather icon, temperature, description, and details."""
     s = hud.surf
     t = hud.t
 
@@ -95,6 +116,8 @@ def draw(hud, x, y, w, h, music):
 
     pygame.draw.rect(s, t["panel"], (x, y, w, h), border_radius=6)
 
+    compact = h < 65
+
     temp = _data.get("temp", "")
     desc = _data.get("desc", "")
     city = _data.get("city", "")
@@ -103,7 +126,7 @@ def draw(hud, x, y, w, h, music):
 
     cy = y + h // 2
 
-    # Weather icon — simple shapes, no border_radius on ellipse
+    # Weather icon -- simple shapes
     import math
     ix, iy = x + 20, cy
     dl = desc.lower()
@@ -131,10 +154,11 @@ def draw(hud, x, y, w, h, music):
         pygame.draw.circle(s, (255, 200, 50), (ix - 3, iy - 4), 6)
         pygame.draw.ellipse(s, t["text_med"], (ix - 6, iy - 2, 16, 10))
 
-    # Temperature — big and bold
+    # Temperature -- big and bold (smaller font in compact mode)
     tx = x + 42
+    temp_font = hud.font_md if compact else hud.font_lg
     if temp:
-        tt = hud.font_lg.render(f"{temp}°F", True, t["text_bright"])
+        tt = temp_font.render(f"{temp}\u00b0F", True, t["text_bright"])
         s.blit(tt, (tx, cy - 16))
 
     # Description + location

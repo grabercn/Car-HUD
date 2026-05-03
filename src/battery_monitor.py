@@ -80,7 +80,8 @@ class BatteryMonitor:
         self.session_start_soc = 0
         self.min_soc = 100
         self.max_soc = 0
-        self.total_distance = 0
+        self.total_distance = 0  # miles driven this session
+        self._last_speed_time = 0
         self.power_samples = []
         self.regen_count = 0
         self.total_samples = 0
@@ -88,6 +89,20 @@ class BatteryMonitor:
         # Voltage tracking for health analysis
         self.voltage_history = []  # last 60 readings for delta calculation
         self.soc_history = []
+
+        # Capacity estimation: track (soc, odometer) pairs for SOC%/mile
+        self.soc_distance_pairs = []  # [(soc, distance_mi)]
+        self.capacity_soc_per_mi = 0  # SOC% consumed per mile
+
+        # Regen recovery tracking: measure how fast SOC recovers during regen
+        self.regen_episodes = []  # [(duration_s, soc_gained)]
+        self._regen_start_time = 0
+        self._regen_start_soc = 0
+        self._in_regen_episode = False
+        self.regen_recovery_rate = 0  # SOC%/min during regen (higher = healthier)
+
+        # Voltage stability: rolling standard deviation of pack voltage
+        self.voltage_stability = 0  # lower = healthier
 
         # Derived metrics
         self.current_data = {
@@ -210,15 +225,78 @@ class BatteryMonitor:
                 variance = sum((s - mean_soc) ** 2 for s in soc_vals) / len(soc_vals)
                 cell_delta = min(variance * 0.01, 0.5)  # map to 0-0.5V range
 
-        # Health score (0-100)
-        # Based on: SOC range, voltage stability, regen recovery
+        # ── Capacity estimation: SOC% consumed per mile ──
+        if speed > 1 and not is_regen:
+            self.soc_distance_pairs.append((soc, self.total_distance))
+            # Keep last 100 pairs, compute over at least 0.5 mi of driving
+            self.soc_distance_pairs = self.soc_distance_pairs[-100:]
+            if len(self.soc_distance_pairs) >= 10:
+                s0, d0 = self.soc_distance_pairs[0]
+                s1, d1 = self.soc_distance_pairs[-1]
+                dist = d1 - d0
+                if dist > 0.3:
+                    self.capacity_soc_per_mi = abs(s0 - s1) / dist
+
+        # ── Regen recovery tracking ──
+        if is_regen and not self._in_regen_episode:
+            # Starting a regen episode
+            self._in_regen_episode = True
+            self._regen_start_time = now
+            self._regen_start_soc = soc
+        elif not is_regen and self._in_regen_episode:
+            # Ending a regen episode
+            self._in_regen_episode = False
+            regen_dur = now - self._regen_start_time
+            regen_gain = soc - self._regen_start_soc
+            if regen_dur > 3 and regen_gain > 0:
+                self.regen_episodes.append((regen_dur, regen_gain))
+                self.regen_episodes = self.regen_episodes[-20:]
+                # Average SOC%/min gained during regen
+                total_gain = sum(g for _, g in self.regen_episodes)
+                total_dur = sum(d for d, _ in self.regen_episodes)
+                if total_dur > 0:
+                    self.regen_recovery_rate = (total_gain / total_dur) * 60
+
+        # ── Voltage stability: std dev of recent voltage readings ──
+        if len(self.voltage_history) > 5:
+            v_vals = [v for _, v in self.voltage_history[-30:]]
+            v_mean = sum(v_vals) / len(v_vals)
+            v_variance = sum((v - v_mean) ** 2 for v in v_vals) / len(v_vals)
+            self.voltage_stability = v_variance ** 0.5
+
+        # ── Health score (0-100): multi-factor assessment ──
+        # Start at 100, deduct for each risk factor with weighted penalties
         health = 100
-        if cell_delta > 0.1:
-            health -= int(cell_delta * 100)
-        if soc < 20:
-            health -= 10
-        if abs(discharge_rate) > 5:
-            health -= 5  # rapid voltage swings
+
+        # Factor 1: Cell imbalance (cell_delta) — strongest indicator
+        # 0.0-0.05V delta = healthy, >0.2V = failing
+        if cell_delta > 0.05:
+            health -= min(40, int((cell_delta - 0.05) * 200))
+
+        # Factor 2: Voltage stability — erratic voltage = degraded cells
+        # Std dev > 5V under normal driving is concerning
+        if self.voltage_stability > 3:
+            health -= min(20, int((self.voltage_stability - 3) * 5))
+
+        # Factor 3: SOC recovery during regen — healthy pack recovers fast
+        # Expect > 1 SOC%/min during active regen; below 0.3 is concerning
+        if len(self.regen_episodes) >= 3:
+            if self.regen_recovery_rate < 0.3:
+                health -= 15
+            elif self.regen_recovery_rate < 0.6:
+                health -= 8
+
+        # Factor 4: Capacity consumption — high SOC%/mi = reduced capacity
+        # Typical healthy pack: ~1-3 SOC%/mi; >5 = pack is struggling
+        if self.capacity_soc_per_mi > 5:
+            health -= min(15, int((self.capacity_soc_per_mi - 5) * 5))
+        elif self.capacity_soc_per_mi > 3.5:
+            health -= 5
+
+        # Factor 5: Rapid voltage swings = internal resistance increase
+        if abs(discharge_rate) > 8:
+            health -= min(10, int((abs(discharge_rate) - 8) * 2))
+
         health = max(0, min(100, health))
 
         # Session tracking
@@ -231,6 +309,13 @@ class BatteryMonitor:
         if is_regen:
             self.regen_count += 1
         self.power_samples.append(power_kw)
+
+        # Distance accumulation for capacity tracking
+        if speed > 1 and self._last_speed_time > 0:
+            dt_hr = (now - self._last_speed_time) / 3600
+            if dt_hr < 0.01:
+                self.total_distance += speed * dt_hr
+        self._last_speed_time = now
 
         self.current_data.update({
             "connected": True,
@@ -251,6 +336,9 @@ class BatteryMonitor:
             "session_min_soc": self.min_soc,
             "session_max_soc": self.max_soc,
             "session_regen_pct": round(self.regen_count / max(1, self.total_samples) * 100, 1),
+            "capacity_soc_per_mi": round(self.capacity_soc_per_mi, 2),
+            "regen_recovery_rate": round(self.regen_recovery_rate, 2),
+            "voltage_stability": round(self.voltage_stability, 2),
             "voltage_trend": [v for _, v in self.voltage_history[-30:]],
             "soc_trend": [s for _, s in self.soc_history[-30:]],
         })

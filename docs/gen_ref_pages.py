@@ -1,5 +1,5 @@
 """Auto-generate API reference markdown pages from source code.
-Runs during docs build — scans src/ for Python files and creates
+Runs during docs build -- scans src/ for Python files and creates
 a reference page for each one with mkdocstrings directives.
 """
 
@@ -7,7 +7,8 @@ import os
 
 SRC_DIR = "src"
 API_DIR = "docs/api"
-WIDGET_DIR = "src/widgets"
+WIDGET_DIR = os.path.join(SRC_DIR, "widgets")
+PAGES_DIR = os.path.join(SRC_DIR, "pages")
 
 os.makedirs(API_DIR, exist_ok=True)
 
@@ -29,9 +30,11 @@ services = {
     "splash_service": "Boot splash screen with progress bar",
 }
 
+generated = 0
 for mod, desc in services.items():
     filepath = os.path.join(SRC_DIR, f"{mod}.py")
     if not os.path.exists(filepath):
+        print(f"  SKIP {mod} (file not found)")
         continue
 
     with open(os.path.join(API_DIR, f"{mod}.md"), "w") as f:
@@ -41,14 +44,16 @@ for mod, desc in services.items():
         f.write(f"::: {mod}\n")
         f.write(f"    options:\n")
         f.write(f"      show_source: true\n")
-        f.write(f"      members_order: source\n\n")
+        f.write(f"      members_order: source\n")
+    generated += 1
 
 # Widget files
 widget_entries = []
-for fname in sorted(os.listdir(WIDGET_DIR)):
-    if fname.startswith("w_") and fname.endswith(".py"):
-        mod_name = fname[:-3]
-        widget_entries.append(mod_name)
+if os.path.isdir(WIDGET_DIR):
+    for fname in sorted(os.listdir(WIDGET_DIR)):
+        if fname.startswith("w_") and fname.endswith(".py"):
+            mod_name = fname[:-3]
+            widget_entries.append(mod_name)
 
 with open(os.path.join(API_DIR, "widgets.md"), "w") as f:
     f.write("# Widgets\n\n")
@@ -83,10 +88,4 @@ with open(os.path.join(API_DIR, "widgets.md"), "w") as f:
         f.write(f"**Source:** [`src/widgets/{mod_name}.py`]")
         f.write(f"(https://github.com/grabercn/Car-HUD/blob/main/src/widgets/{mod_name}.py)\n\n")
 
-# Page files
-pages_dir = os.path.join(SRC_DIR, "pages")
-for fname in sorted(os.listdir(pages_dir)):
-    if fname.endswith(".py") and fname != "__init__.py":
-        mod_name = fname[:-3]
-
-print(f"Generated API docs for {len(services)} services + {len(widget_entries)} widgets")
+print(f"Generated API docs for {generated} services + {len(widget_entries)} widgets")

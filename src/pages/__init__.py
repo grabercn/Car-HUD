@@ -1,1 +1,1 @@
-# Car-HUD page modules
+"""Car-HUD page modules -- vehicle and system display pages."""

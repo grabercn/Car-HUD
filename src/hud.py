@@ -495,100 +495,6 @@ class CarHUD:
     def draw_system_page(self, stats, music):
         system_page.draw(self, stats, music)
 
-    def draw_lower_section(self, y, music, vd):
-        W = self.width
-        s = self.surf
-        t = self.t
-        now = datetime.datetime.now()
-
-        if music.get("playing"):
-            track = music.get("track", "")
-            artist = music.get("artist", "")
-            album = music.get("album", "")
-            device = music.get("device", "")
-
-            # Album art (left side) — bigger for 2.5" TFT
-            art_x = 4
-            art_size = 55
-            art_loaded = False
-            try:
-                art_file = "/home/chrismslist/car-hud/current_art.jpg"
-                if os.path.exists(art_file) and os.path.getsize(art_file) > 100:
-                    from PIL import Image as PILImage
-                    pil = PILImage.open(art_file).convert("RGB")
-                    pil = pil.resize((art_size, art_size), PILImage.LANCZOS)
-                    art_surf = pygame.image.fromstring(pil.tobytes(), (art_size, art_size), "RGB")
-                    s.blit(art_surf, (art_x, y))
-                    art_loaded = True
-            except Exception:
-                pass
-
-            if not art_loaded:
-                # Fallback: centered music note icon in bordered square
-                pygame.draw.rect(s, t["border"], (art_x, y, art_size, art_size), border_radius=4)
-                ncx, ncy = art_x + art_size // 2, y + art_size // 2
-                # Note head
-                pygame.draw.ellipse(s, t["primary"], (ncx - 8, ncy + 2, 10, 8))
-                # Note stem
-                pygame.draw.line(s, t["primary"], (ncx + 1, ncy + 5), (ncx + 1, ncy - 14), 2)
-                # Note flag
-                pygame.draw.line(s, t["primary"], (ncx + 1, ncy - 14), (ncx + 7, ncy - 10), 2)
-
-            # Track info (right of art)
-            tx = art_x + art_size + 6
-            tw = W - tx - 4
-            max_c = tw // 7
-
-            # Use CJK font if text contains non-ASCII
-            has_cjk = any(ord(c) > 0x2E80 for c in track)
-            track_font = self.font_cjk if has_cjk and self.font_cjk else self.font_md
-            tt = track_font.render(track[:max_c], True, t["text_bright"])
-            s.blit(tt, (tx, y))
-
-            has_cjk_a = any(ord(c) > 0x2E80 for c in artist)
-            artist_font = self.font_cjk_sm if has_cjk_a and hasattr(self, "font_cjk_sm") and self.font_cjk_sm else self.font_sm
-            at = artist_font.render(artist[:max_c], True, t["text_med"])
-            s.blit(at, (tx, y + 18))
-
-            # Progress bar — estimate from timestamp if API returns 0
-            prog = max(0, music.get("progress", 0))
-            dur = max(0, music.get("duration", 0))
-            if prog == 0 and dur > 0 and music.get("timestamp"):
-                elapsed = time.time() - music["timestamp"]
-                prog = min(elapsed, dur)
-            if dur > 0:
-                pbar_y = y + 36
-                pygame.draw.rect(s, t["border"], (tx, pbar_y, tw, 4), border_radius=2)
-                fw = int(tw * min(prog / dur, 1))
-                if fw > 0:
-                    pygame.draw.rect(s, t["primary"], (tx, pbar_y, fw, 4), border_radius=2)
-
-                # Time — bigger font, left aligned
-                prog_m, prog_s = int(prog) // 60, int(prog) % 60
-                dur_m, dur_s = int(dur) // 60, int(dur) % 60
-                time_t = self.font_sm.render(f"{prog_m}:{prog_s:02d} / {dur_m}:{dur_s:02d}", True, t["text_med"])
-                s.blit(time_t, (tx, pbar_y + 6))
-
-            # Device source — bigger, right aligned below progress
-            dev_name = music.get("device", "")
-            if dev_name:
-                dt = self.font_sm.render(dev_name, True, t["text_dim"])
-                s.blit(dt, (tx + tw - dt.get_width(), pbar_y + 6 if dur > 0 else y + 36))
-
-        elif music.get("paired"):
-            phone = music.get("phone", "Phone")
-            pygame.draw.circle(s, t["primary_dim"], (15, y + 12), 3)
-            pt = self.font_sm.render(f"Connected: {phone}", True, t["text_dim"])
-            s.blit(pt, (28, y + 5))
-
-        elif vd:
-            ts = self.font_md.render(now.strftime("%I:%M %p"), True, t["text_med"])
-            s.blit(ts, (10, y + 2))
-            amb = vd.get("AMBIANT_AIR_TEMP")
-            if amb:
-                at = self.font_md.render(f"{amb:.0f}C", True, t["text_dim"])
-                s.blit(at, (W - at.get_width() - 10, y + 2))
-
     def draw_status_strip(self, obd):
         W, H = self.width, self.height
         s = self.surf
@@ -1205,10 +1111,9 @@ class CarHUD:
             try:
                 with open("/tmp/car-hud-touch") as tf:
                     td = json.load(tf)
-                    if time.time() - td.get("time", 0) < 0.5 and td["time"] != getattr(self, '_last_touch_time', 0):
+                    if time.time() - td.get("time", 0) < 2.0 and td["time"] != getattr(self, '_last_touch_time', 0):
                         self._last_touch_time = td["time"]
                         g = td.get("gesture", "")
-                        ty = td.get("y", 0)
                         if g == "tap":
                             # Tap anywhere on main area = switch pages
                             self.page_idx = (self.page_idx + 1) % len(self.page_names)
@@ -1216,7 +1121,8 @@ class CarHUD:
                         elif g == "long_press":
                             # Pin/unpin the currently visible top widget
                             import widgets as _wp
-                            active = _wp.get_active(self, music)
+                            _music = self.get_music_data()
+                            active = _wp.get_active(self, _music)
                             if active:
                                 wn = active[0][0].lower()
                                 pinned = _wp.get_pinned()
@@ -1473,11 +1379,6 @@ class CarHUD:
             self.clock_t.tick(30)
 
         pygame.quit()
-
-
-if __name__ == "__main__":
-    hud = CarHUD()
-    hud.run()
 
 
 if __name__ == "__main__":

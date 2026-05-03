@@ -1,12 +1,25 @@
-"""Music / Now Playing widget."""
+"""Music / Now Playing widget.
+
+Displays the currently playing track with album art, artist, progress bar,
+and device name.  Album art is cached as a pygame.Surface to avoid repeated
+PIL decoding every frame.
+"""
 
 import os
 import time
 import pygame
 
+try:
+    from config import ART_FILE, GREEN, AMBER, RED
+except ImportError:
+    ART_FILE = "/home/chrismslist/car-hud/current_art.jpg"
+    GREEN = (0, 180, 85)
+    AMBER = (220, 160, 0)
+    RED = (220, 45, 45)
+
 name = "Music"
 priority = 10
-view_time = 12  # seconds — user needs time to read track info
+view_time = 12  # seconds -- user needs time to read track info
 
 _last_track = ""
 _track_change_time = 0
@@ -16,10 +29,15 @@ _art_cache_size = 0     # size it was rendered at
 
 
 def is_active(hud, music):
-    return music.get("playing", False)
+    """Return True when a track is currently playing."""
+    try:
+        return bool(music.get("playing", False))
+    except Exception:
+        return False
 
 
 def urgency(hud, music):
+    """Promote widget when a new track starts (high urgency for 15 s)."""
     global _last_track, _track_change_time
     track = music.get("track", "")
     if track and track != _last_track:
@@ -31,17 +49,22 @@ def urgency(hud, music):
 
 
 def draw(hud, x, y, w, h, music):
+    """Render album art, track/artist text, progress bar, and device name."""
     s = hud.surf
     t = hud.t
+
+    # Panel background
+    pygame.draw.rect(s, t["panel"], (x, y, w, h), border_radius=6)
+
     track = music.get("track", "")
     artist = music.get("artist", "")
 
-    # Album art — cached to avoid PIL decode every frame
+    # Album art -- cached to avoid PIL decode every frame
     global _art_cache, _art_cache_mtime, _art_cache_size
-    art_size = min(h - 4, w // 4)
+    art_size = max(1, min(h - 4, w // 4))
     art_y = y + (h - art_size) // 2
     art_loaded = False
-    art_file = "/home/chrismslist/car-hud/current_art.jpg"
+    art_file = ART_FILE
     try:
         if os.path.exists(art_file) and os.path.getsize(art_file) > 100:
             mt = os.path.getmtime(art_file)
@@ -66,13 +89,13 @@ def draw(hud, x, y, w, h, music):
 
     # Text area
     tx = x + art_size + 8
-    tw = w - art_size - 12
+    tw = max(1, w - art_size - 12)
 
     # Adaptive layout based on height
     compact = h < 65
 
     # Track title
-    has_cjk = any(ord(c) > 0x2E80 for c in track)
+    has_cjk = any(ord(c) > 0x2E80 for c in track) if track else False
     track_font = hud.font_cjk if has_cjk and hud.font_cjk else (hud.font_md if compact else hud.font_lg)
     tt = track_font.render(track, True, t["text_bright"])
     if tt.get_width() > tw:
@@ -83,7 +106,7 @@ def draw(hud, x, y, w, h, music):
     s.blit(tt, (tx, y + 2))
 
     # Artist
-    has_cjk_a = any(ord(c) > 0x2E80 for c in artist)
+    has_cjk_a = any(ord(c) > 0x2E80 for c in artist) if artist else False
     artist_font = hud.font_cjk_sm if has_cjk_a and hasattr(hud, "font_cjk_sm") and hud.font_cjk_sm else hud.font_sm
     at = artist_font.render(artist, True, t["text_med"])
     if at.get_width() > tw:
@@ -103,7 +126,8 @@ def draw(hud, x, y, w, h, music):
     pbar_y = artist_y + artist_font.get_height() + 4
     if dur > 0 and pbar_y + 6 < y + h:
         pygame.draw.rect(s, t["border"], (tx, pbar_y, tw, 4), border_radius=2)
-        fw = int(tw * min(prog / dur, 1))
+        ratio = min(prog / dur, 1) if dur > 0 else 0
+        fw = int(tw * ratio)
         if fw > 0:
             pygame.draw.rect(s, t["primary"], (tx, pbar_y, fw, 4), border_radius=2)
 

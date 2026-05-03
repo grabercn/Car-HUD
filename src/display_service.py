@@ -11,6 +11,7 @@ import sys
 import json
 import time
 import signal
+import subprocess
 
 SIGNAL_FILE = "/tmp/car-hud-display-data"
 BRIGHTNESS_FILE = "/home/chrismslist/car-hud/.brightness"
@@ -109,7 +110,8 @@ class DisplayController:
         pwm_path = "/sys/class/pwm/pwmchip0"
         if not os.path.exists(pwm_path):
             # Try enabling the overlay
-            os.system("sudo dtoverlay pwm pin=18 func=2 2>/dev/null")
+            subprocess.run(["sudo", "dtoverlay", "pwm", "pin=18", "func=2"],
+                         capture_output=True, timeout=5)
             time.sleep(0.5)
             if not os.path.exists(pwm_path):
                 raise Exception("No PWM chip — add dtoverlay=pwm to config.txt")

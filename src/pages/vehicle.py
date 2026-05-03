@@ -28,29 +28,35 @@ def draw(hud, obd, music):
     now_t = time.time()
     now = datetime.datetime.now()
 
-    rpm = vd.get("RPM", 0)
-    speed_raw = vd.get("SPEED", 0) * 0.621371
-    load = vd.get("ENGINE_LOAD", 0)
-    throttle = vd.get("THROTTLE_POS", 0)
-    fuel = vd.get("FUEL_LEVEL", 0)
-    hv = vd.get("HYBRID_BATTERY_REMAINING", 0)
-    cool = vd.get("COOLANT_TEMP", 0)
-    volts = vd.get("CONTROL_MODULE_VOLTAGE", 0)
-    intake = vd.get("INTAKE_TEMP", 0)
+    rpm = vd.get("RPM") or 0
+    speed_raw = (vd.get("SPEED") or 0) * 0.621371
+    load = vd.get("ENGINE_LOAD") or 0
+    throttle = vd.get("THROTTLE_POS") or 0
+    fuel = vd.get("FUEL_LEVEL")       # None when not yet read
+    hv = vd.get("HYBRID_BATTERY_REMAINING")  # None when not yet read
+    cool = vd.get("COOLANT_TEMP")     # None when not yet read
+    volts = vd.get("CONTROL_MODULE_VOLTAGE")  # None when not yet read
+    intake = vd.get("INTAKE_TEMP")    # None when not yet read
     ev = rpm < 100
 
-    # Velocity prediction — extrapolate speed between OBD readings
+    # Velocity prediction — damped extrapolation between OBD readings
     if not hasattr(draw, '_prev_speed'):
         draw._prev_speed = 0
         draw._speed_rate = 0
         draw._prev_t = now_t
     dt = now_t - draw._prev_t
-    if dt > 0 and dt < 1:
-        draw._speed_rate = (speed_raw - draw._prev_speed) / dt  # mph/sec
+    if 0 < dt < 1:
+        raw_rate = (speed_raw - draw._prev_speed) / dt  # mph/sec
+        draw._speed_rate += (raw_rate - draw._speed_rate) * 0.3  # smooth the rate
+    elif dt >= 1:
+        draw._speed_rate = 0  # stale — reset
     draw._prev_speed = speed_raw
     draw._prev_t = now_t
-    # Predict ahead by half a frame interval
-    speed = max(0, speed_raw + draw._speed_rate * 0.03)
+    # Clamp prediction to avoid overshoot; only predict when actually moving
+    if speed_raw > 1:
+        speed = max(0, speed_raw + draw._speed_rate * 0.016)
+    else:
+        speed = speed_raw
 
     # Warnings
     wy_off = 0
@@ -64,9 +70,14 @@ def draw(hud, obd, music):
     cx, cy = W // 2, 148
     hud.draw_arc_gauge(cx, cy, 115, 14, min(speed / 140, 1.0), t["primary"],
                        start=math.pi * 1.15, end=-math.pi * 0.15, ticks=True)
-    rc = t["primary_dim"] if rpm < 3000 else AMBER if rpm < 5500 else RED
-    hud.draw_arc_gauge(cx, cy, 97, 4, min(rpm / 7000, 1.0), rc,
-                       start=math.pi * 1.15, end=-math.pi * 0.15)
+    if ev:
+        # EV mode — show a thin green ring at zero fill to indicate electric drive
+        hud.draw_arc_gauge(cx, cy, 97, 4, 0.0, GREEN,
+                           start=math.pi * 1.15, end=-math.pi * 0.15)
+    else:
+        rc = t["primary_dim"] if rpm < 3000 else AMBER if rpm < 5500 else RED
+        hud.draw_arc_gauge(cx, cy, 97, 4, min(rpm / 7000, 1.0), rc,
+                           start=math.pi * 1.15, end=-math.pi * 0.15)
 
     sp = f"{int(speed)}"
     hud.draw_glow_text(sp, hud.font_xxl, t["text_bright"],
@@ -81,7 +92,7 @@ def draw(hud, obd, music):
 
     lx, ly, lr = 78, 148, 65
     if ev:
-        hud.draw_arc_gauge(lx, ly, lr, 10, min(throttle / 80, 1.0), GREEN,
+        hud.draw_arc_gauge(lx, ly, lr, 10, min(throttle / 100, 1.0), GREEN,
                            start=math.pi * 1.3, end=math.pi * 0.7, ticks=True)
     else:
         lp = min(load / 100, 1.0)
@@ -94,20 +105,57 @@ def draw(hud, obd, music):
     hud.draw_glow_text("CHG", hud.font_xs, GREEN, (lx - 12, ly + lr + 4))
 
     rx, ry, rr = W - 78, 148, 65
-    fc = GREEN if fuel > 20 else AMBER if fuel > 10 else RED
-    hud.draw_arc_gauge(rx, ry, rr, 10, fuel / 100, fc, start=math.pi * 0.3, end=-math.pi * 0.3, ticks=True)
-    bc = GREEN if hv > 30 else AMBER if hv > 15 else RED
-    hud.draw_arc_gauge(rx, ry, rr - 18, 6, hv / 100, bc, start=math.pi * 0.3, end=-math.pi * 0.3)
-    hud.draw_glow_text("FUEL", hud.font_xs, t["text_dim"], (rx - 15, ry - rr - 14))
-    hud.draw_glow_text("BATT", hud.font_xs, t["text_dim"], (rx - 15, ry + rr + 4))
+    fuel_val = fuel if fuel is not None else 0
+    hv_val = hv if hv is not None else 0
+    if fuel is not None:
+        fc = GREEN if fuel_val > 20 else AMBER if fuel_val > 10 else RED
+        hud.draw_arc_gauge(rx, ry, rr, 10, fuel_val / 100, fc,
+                           start=math.pi * 0.3, end=-math.pi * 0.3, ticks=True)
+    else:
+        # No data yet — draw empty track only
+        hud.draw_arc_gauge(rx, ry, rr, 10, 0.0, t["border"],
+                           start=math.pi * 0.3, end=-math.pi * 0.3, ticks=True)
+    if hv is not None:
+        bc = GREEN if hv_val > 30 else AMBER if hv_val > 15 else RED
+        hud.draw_arc_gauge(rx, ry, rr - 18, 6, hv_val / 100, bc,
+                           start=math.pi * 0.3, end=-math.pi * 0.3)
+    else:
+        hud.draw_arc_gauge(rx, ry, rr - 18, 6, 0.0, t["border"],
+                           start=math.pi * 0.3, end=-math.pi * 0.3)
+    fuel_lbl_c = t["text_dim"] if fuel is not None else t["border"]
+    batt_lbl_c = t["text_dim"] if hv is not None else t["border"]
+    hud.draw_glow_text("FUEL", hud.font_xs, fuel_lbl_c, (rx - 15, ry - rr - 14))
+    hud.draw_glow_text("BATT", hud.font_xs, batt_lbl_c, (rx - 15, ry + rr + 4))
 
     ty = 6 + wy_off
-    hud.draw_glow_text(now.strftime("%I:%M"), hud.font_md, t["text_bright"], (12, ty))
-    vl = f"{volts:.1f}V"
-    hud.draw_glow_text(vl, hud.font_md, t["text_med"], (W - hud.font_md.size(vl)[0] - 12, ty))
-    hud.draw_glow_text(f"{intake:.0f}C", hud.font_xs, t["text_dim"], (cx + 60, cy + 60))
-    hud.draw_glow_text(f"{cool:.0f}C", hud.font_xs, t["text_med"],
-                       (cx - 60 - hud.font_xs.size(f"{cool:.0f}C")[0], cy + 60))
+    time_str = now.strftime("%I:%M").lstrip("0")  # strip leading zero from 12h time
+    hud.draw_glow_text(time_str, hud.font_md, t["text_bright"], (12, ty))
+    if volts is not None and volts > 0:
+        vl = f"{volts:.1f}V"
+        hud.draw_glow_text(vl, hud.font_md, t["text_med"],
+                           (W - hud.font_md.size(vl)[0] - 12, ty))
+    else:
+        vl = "--V"
+        hud.draw_glow_text(vl, hud.font_md, t["text_dim"],
+                           (W - hud.font_md.size(vl)[0] - 12, ty))
+    # AIR (intake temp) — show "--" when data not yet available
+    if intake is not None and intake > 0:
+        air_str = f"{intake:.0f}C"
+        hud.draw_glow_text("AIR", hud.font_xs, t["text_dim"], (cx + 60, cy + 60))
+        hud.draw_glow_text(air_str, hud.font_xs, t["text_dim"],
+                           (cx + 60 + hud.font_xs.size("AIR ")[0], cy + 60))
+    else:
+        hud.draw_glow_text("AIR --", hud.font_xs, t["border"], (cx + 60, cy + 60))
+    # H2O (coolant temp) — show "--" when data not yet available
+    if cool is not None and cool > 0:
+        h2o_str = f"H2O {cool:.0f}C"
+        h2o_c = RED if cool > 110 else AMBER if cool > 100 else t["text_med"]
+        hud.draw_glow_text(h2o_str, hud.font_xs, h2o_c,
+                           (cx - 60 - hud.font_xs.size(h2o_str)[0], cy + 60))
+    else:
+        h2o_str = "H2O --"
+        hud.draw_glow_text(h2o_str, hud.font_xs, t["border"],
+                           (cx - 60 - hud.font_xs.size(h2o_str)[0], cy + 60))
 
     # ── Widget — continuous scroll ──
     wly = cy + 96

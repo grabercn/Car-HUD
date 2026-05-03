@@ -84,6 +84,12 @@ input:focus,select:focus{outline:none;border-color:var(--accent)}
 <h2>System</h2>
 <div class="card" id="sys">Loading...</div>
 
+<h2>Battery</h2>
+<div class="card" id="bat"><div class="dim">Loading...</div></div>
+
+<h2>Radar</h2>
+<div class="card" id="rad"><div class="dim">Loading...</div></div>
+
 <h2>Now Playing</h2>
 <div class="card" id="mus"><div class="dim">Not playing</div></div>
 
@@ -154,7 +160,29 @@ async function loadBr(){try{const d=await(await fetch('/api/brightness')).json()
 let brTimer=null;
 function setBr(v){$('br-val').textContent=v+'%';clearTimeout(brTimer);brTimer=setTimeout(async()=>{await fetch('/api/brightness/set',{method:'POST',body:'level='+v});L('Brightness: '+v+'%')},200)}
 
-load();loadW();loadTheme();loadBr();setInterval(load,4000);
+async function loadBat(){try{
+const d=await(await fetch('/api/battery')).json();
+if(!d.connected){$('bat').innerHTML='<div class="dim">HV battery not connected</div>';return}
+const soc=d.soc!=null?d.soc:'--';
+const health=d.health!=null?d.health:'--';
+const volts=d.pack_voltage!=null?d.pack_voltage:'--';
+const sc=soc>=50?'g':soc>=20?'a':'r';
+const hc=health>=80?'g':health>=50?'a':'r';
+$('bat').innerHTML='<div class="row"><span class="status"><span class="dot '+sc+'"></span>SOC: '+soc+'%</span><span class="dim">Pack voltage: '+volts+' V</span></div>'
++'<div class="row"><span class="status"><span class="dot '+hc+'"></span>Health: '+health+'%</span></div>';
+}catch(e){$('bat').innerHTML='<div class="dim">Battery unavailable</div>'}}
+
+async function loadRad(){try{
+const d=await(await fetch('/api/radar')).json();
+const conn=d.connected?'g':'d';
+const st=d.connected?'Connected':'Disconnected';
+let alert_txt='No alerts';
+if(d.last_alert)alert_txt=d.last_alert;
+$('rad').innerHTML='<div class="row"><span class="status"><span class="dot '+conn+'"></span>Cobra RAD 700i: '+st+'</span></div>'
++'<div class="row"><span class="dim">Last alert: '+alert_txt+'</span></div>';
+}catch(e){$('rad').innerHTML='<div class="dim">Radar unavailable</div>'}}
+
+load();loadW();loadTheme();loadBr();loadBat();loadRad();setInterval(()=>{load();loadBat();loadRad()},4000);
 </script></body></html>"""
 
 #!/usr/bin/env python3
@@ -350,6 +378,8 @@ class Handler(BaseHTTPRequestHandler):
             self.api_get_battery()
         elif path == "/api/battery/history":
             self.api_battery_history()
+        elif path == "/api/radar":
+            self.api_get_radar()
         elif path == "/status":
             self.serve_status()
         else:
@@ -952,12 +982,19 @@ inp.focus();
         try:
             with open("/home/chrismslist/car-hud/.theme") as f:
                 self._json_response(json.load(f))
-        except:
+        except Exception:
             self._json_response({"theme": "blue", "auto": True})
 
     def api_get_battery(self):
         try:
             with open("/tmp/car-hud-battery-data") as f:
+                self._json_response(json.load(f))
+        except Exception:
+            self._json_response({"connected": False})
+
+    def api_get_radar(self):
+        try:
+            with open("/tmp/car-hud-cobra-data") as f:
                 self._json_response(json.load(f))
         except Exception:
             self._json_response({"connected": False})

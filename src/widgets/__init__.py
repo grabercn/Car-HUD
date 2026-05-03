@@ -109,12 +109,19 @@ def get_active(hud, music):
     # Apply show_every cooldowns — but only if we'd still have 3+ widgets
     # Skip cooldowns entirely during first 60s of boot (let everything show once)
     # This prevents the rotation from breaking when too many are filtered
+    # Pinned widgets are always exempt from cooldowns
+    pinned = get_pinned()
     boot_age = now - _load_time
     if len(active) > 3 and boot_age > 60:
         filtered = []
         for eff, wname, mod in active:
-            show_every = getattr(mod, "show_every", 0)
             wkey = wname.lower()
+            # Pinned widgets bypass cooldowns — always stay visible
+            if wkey in pinned:
+                filtered.append((eff, wname, mod))
+                _last_shown[wkey] = now
+                continue
+            show_every = getattr(mod, "show_every", 0)
             if show_every > 0 and wkey in _last_shown:
                 if now - _last_shown[wkey] < show_every:
                     urg = mod.urgency(hud, music) if hasattr(mod, "urgency") else 0
@@ -127,7 +134,6 @@ def get_active(hud, music):
             active = filtered
 
     # Sort: pinned widgets first (priority -999), then by effective priority
-    pinned = get_pinned()
     def sort_key(item):
         eff, wname, mod = item
         if wname.lower() in pinned:

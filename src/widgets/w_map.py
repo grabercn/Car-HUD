@@ -1,16 +1,27 @@
-"""Mini-Map widget — GPS position, compass heading, and movement trail from Cobra RAD 700i."""
+"""Mini-Map widget -- GPS position, compass heading, and movement trail.
+
+Reads GPS data written by the Cobra RAD 700i driver.  In full layout mode
+the left half shows a compass needle and speed while the right half renders
+a breadcrumb trail of recent positions.  Compact mode (h<65) falls back
+to a single-row layout.
+"""
 
 import json
 import math
 import time
 import pygame
 
+try:
+    from config import GPS_DATA, GREEN, AMBER, RED
+except ImportError:
+    GPS_DATA = "/tmp/car-hud-gps"
+    GREEN = (0, 180, 85)
+    AMBER = (220, 160, 0)
+    RED = (220, 45, 45)
+
 name = "Map"
 priority = 40
 view_time = 8
-
-GREEN = (0, 180, 85)
-AMBER = (220, 160, 0)
 
 # Trail of recent positions: list of (lat, lon, timestamp)
 _trail = []
@@ -18,9 +29,13 @@ _MAX_TRAIL = 30
 
 
 def _read_gps():
-    """Read shared GPS data written by the Cobra RAD 700i driver."""
+    """Read shared GPS data written by the Cobra RAD 700i driver.
+
+    Returns:
+        dict with lat/lon/speed/heading keys, or None if unavailable.
+    """
     try:
-        with open("/tmp/car-hud-gps") as f:
+        with open(GPS_DATA) as f:
             d = json.load(f)
         if d.get("lat", 0) != 0 and d.get("lon", 0) != 0:
             return d
@@ -37,11 +52,16 @@ def _heading_to_compass(deg):
 
 
 def is_active(hud, music):
-    gps = _read_gps()
-    return gps is not None
+    """Return True when valid GPS data is available."""
+    try:
+        gps = _read_gps()
+        return gps is not None
+    except Exception:
+        return False
 
 
 def urgency(hud, music):
+    """Neutral urgency -- informational widget."""
     return 0
 
 
@@ -138,6 +158,7 @@ def _draw_trail(s, trail, cx, cy, area_w, area_h, t):
 
 
 def draw(hud, x, y, w, h, music):
+    """Render compass, GPS coordinates, speed, and movement trail."""
     s = hud.surf
     t = hud.t
 
@@ -146,7 +167,7 @@ def draw(hud, x, y, w, h, music):
     gps = _read_gps()
 
     if not gps:
-        # ── No GPS — graceful fallback ──
+        # ── No GPS -- graceful fallback ──
         cy = y + h // 2
         nt = hud.font_sm.render("No GPS", True, t["text_dim"])
         s.blit(nt, (x + w // 2 - nt.get_width() // 2, cy - 6))
@@ -166,7 +187,7 @@ def draw(hud, x, y, w, h, music):
         cy = y + h // 2
 
         # Compass direction label
-        ct = hud.font_md.render(compass_str, True, GREEN)
+        ct = hud.font_sm.render(compass_str, True, GREEN)
         s.blit(ct, (x + 10, cy - ct.get_height() // 2))
 
         # Coords

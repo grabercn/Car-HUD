@@ -5,7 +5,7 @@ import struct
 import math
 import os
 
-INSTALL_DIR = "/home/chrismslist/car-hud"
+INSTALL_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def gen_wav(filename, freq, duration=0.5, volume=0.8, pattern="steady"):
     """Generate a WAV file with specified frequency and pattern."""
@@ -79,5 +79,3 @@ if __name__ == "__main__":
     for fname, (freq, dur, pat) in sounds.items():
         gen_wav(os.path.join(INSTALL_DIR, fname), freq, dur, 0.7, pat)
     print("All radar sounds generated!")
-
-print("All radar sounds generated!")

@@ -1,9 +1,22 @@
-"""Connectivity widget — WiFi + Bluetooth unified."""
+"""Connectivity widget -- WiFi + Bluetooth unified.
+
+Shows WiFi network name/IP on the left and paired Bluetooth device on the
+right, separated by a vertical divider.  Uses cached Bluetooth state to
+avoid running bluetoothctl every frame.
+"""
 
 import json
 import time
 import subprocess
 import pygame
+
+try:
+    from config import WIFI_DATA, GREEN, AMBER, RED
+except ImportError:
+    WIFI_DATA = "/tmp/car-hud-wifi-data"
+    GREEN = (0, 180, 85)
+    AMBER = (220, 160, 0)
+    RED = (220, 45, 45)
 
 name = "Connectivity"
 priority = 15
@@ -14,17 +27,25 @@ _bt_cache = {"connected": False, "name": "", "last_check": 0}
 
 
 def is_active(hud, music):
+    """Return True when WiFi is connected/tethered or a BT phone is paired."""
     wifi = False
     try:
-        with open("/tmp/car-hud-wifi-data") as f:
+        with open(WIFI_DATA) as f:
             wd = json.load(f)
         wifi = wd.get("state") in ("connected", "tethered")
     except Exception:
         pass
-    return wifi or _check_bt()
+    try:
+        return wifi or _check_bt()
+    except Exception:
+        return wifi
 
 
 def _check_bt():
+    """Check for a connected Bluetooth phone (cached for 5 seconds).
+
+    Skips OBD adapter names so only actual phones are reported.
+    """
     now = time.time()
     if now - _bt_cache["last_check"] < 5:
         return _bt_cache["connected"]
@@ -39,16 +60,16 @@ def _check_bt():
             if len(parts) < 3:
                 continue
             mac = parts[1]
-            name = parts[2] if len(parts) > 2 else ""
+            dev_name = parts[2] if len(parts) > 2 else ""
             # Skip OBD adapters
-            if any(x in name.lower() for x in ["vlink", "obd", "elm", "icar", "vgate"]):
+            if any(x in dev_name.lower() for x in ["vlink", "obd", "elm", "icar", "vgate"]):
                 continue
             # Check if it's a phone
             info = subprocess.run(["bluetoothctl", "info", mac],
                                   capture_output=True, text=True, timeout=2)
             if "Icon: phone" in info.stdout:
                 _bt_cache["connected"] = True
-                _bt_cache["name"] = name
+                _bt_cache["name"] = dev_name
                 break
     except Exception:
         pass
@@ -58,25 +79,27 @@ def _check_bt():
 _boot_time = time.time()
 
 def urgency(hud, music):
-    # High priority for first 30 seconds after boot
+    """High priority for first 30 seconds after boot."""
     if time.time() - _boot_time < 30:
         return -50
     return 0
 
 
 def draw(hud, x, y, w, h, music):
+    """Render WiFi status (left) and Bluetooth status (right) with divider."""
     s = hud.surf
     t = hud.t
 
     pygame.draw.rect(s, t["panel"], (x, y, w, h), border_radius=6)
 
+    compact = h < 65
     mid = w // 2
     pad = 10
 
     # ── Left: WiFi ──
     wifi_ok = False
     try:
-        with open("/tmp/car-hud-wifi-data") as f:
+        with open(WIFI_DATA) as f:
             wd = json.load(f)
         state = wd.get("state", "")
         ssid = wd.get("ssid", "")
@@ -96,10 +119,11 @@ def draw(hud, x, y, w, h, music):
         pygame.draw.arc(s, c, (ix - r, iy - r, r * 2, r * 2), 0.4, 2.7, 2)
     pygame.draw.circle(s, color, (ix, iy), 2)
 
-    # Text
-    nt = hud.font_sm.render(label, True, t["text_bright"] if wifi_ok else t["text_dim"])
+    # Text -- use smaller font in compact mode
+    label_font = hud.font_xs if compact else hud.font_sm
+    nt = label_font.render(label, True, t["text_bright"] if wifi_ok else t["text_dim"])
     s.blit(nt, (x + pad + 26, y + h // 2 - 12))
-    if ip and wifi_ok:
+    if ip and wifi_ok and not compact:
         it = hud.font_xs.render(ip, True, t["text_dim"])
         s.blit(it, (x + pad + 26, y + h // 2 + 6))
 
@@ -119,14 +143,16 @@ def draw(hud, x, y, w, h, music):
     ], 2)
     pygame.draw.line(s, bt_color, (bx, by - 8), (bx, by + 16), 2)
 
+    bt_font = hud.font_xs if compact else hud.font_sm
     if bt_ok:
         bt_name = _bt_cache["name"][:12]
-        bt = hud.font_sm.render(bt_name, True, t["text_bright"])
+        bt = bt_font.render(bt_name, True, t["text_bright"])
         s.blit(bt, (rx + 20, y + h // 2 - 12))
-        st = hud.font_xs.render("Connected", True, t["text_dim"])
-        s.blit(st, (rx + 20, y + h // 2 + 6))
+        if not compact:
+            st = hud.font_xs.render("Connected", True, GREEN)
+            s.blit(st, (rx + 20, y + h // 2 + 6))
     else:
-        bt = hud.font_sm.render("No Device", True, t["text_dim"])
+        bt = bt_font.render("No Device", True, t["text_dim"])
         s.blit(bt, (rx + 20, y + h // 2 - 4))
 
     return True

@@ -33,11 +33,13 @@ plugins:
   - mkdocstrings:
       handlers:
         python:
+          paths: [src]
           options:
             show_source: true
             show_root_heading: true
             members_order: source
             docstring_style: google
+            allow_inspection: false
 
 markdown_extensions:
   - admonition
@@ -68,11 +70,18 @@ nav:
   - API Reference:
     - config: api/config.md
     - hud: api/hud.md
-    - obd_service: api/obd.md
-    - cobra_service: api/cobra.md
-    - battery_monitor: api/battery.md
-    - display_service: api/display.md
-    - web_service: api/web.md
+    - obd_service: api/obd_service.md
+    - cobra_service: api/cobra_service.md
+    - battery_monitor: api/battery_monitor.md
+    - display_service: api/display_service.md
+    - web_service: api/web_service.md
+    - spotify_service: api/spotify_service.md
+    - wifi_service: api/wifi_service.md
+    - voice_service: api/voice_service.md
+    - brain: api/brain.md
+    - intent: api/intent.md
+    - touch_service: api/touch_service.md
+    - splash_service: api/splash_service.md
     - widgets: api/widgets.md
   - Web Interface:
     - Settings: web/settings.md
