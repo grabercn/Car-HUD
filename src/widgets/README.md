@@ -25,7 +25,7 @@ Each file (`w_*.py`) exports `name`, `priority`, `draw()`, and `is_active()`.
 | [`w_battery.py`](w_battery.py) | HV Battery | Honda Accord Hybrid HV Battery Widget | 3 | 15s | 0s | No | 31.1 KB | 2026-05-03 |
 | [`w_radar.py`](w_radar.py) | Radar | Radar Detector widget -- Cobra RAD 700i alerts and status | 5 | 15s | 0s | No | 4.4 KB | 2026-05-03 |
 | [`w_music.py`](w_music.py) | Music | Music / Now Playing widget | 10 | 12s | 0s | No | 5.1 KB | 2026-05-03 |
-| [`w_trip.py`](w_trip.py) | Trip | Trip Computer widget — full session stats for 2014 Honda Accord Hybrid | 10 | 12s | 0s | No | 11.4 KB | 2026-05-03 |
+| [`w_trip.py`](w_trip.py) | Trip | Trip Computer widget — comprehensive session stats for 2014 Honda Accord Hybrid | 10 | 12s | 0s | No | 21.5 KB | 2026-05-03 |
 | [`w_connectivity.py`](w_connectivity.py) | Connectivity | Connectivity widget -- WiFi + Bluetooth unified | 15 | 5s | 60s | No | 4.9 KB | 2026-05-03 |
 | [`w_dashcam.py`](w_dashcam.py) | Dashcam | Dashcam status widget | 15 | 6s | 0s | No | 2.4 KB | 2026-05-03 |
 | [`w_weather.py`](w_weather.py) | Weather | Weather widget -- current conditions via wttr.in (no API key needed) | 25 | 6s | 180s | Yes | 6.2 KB | 2026-05-03 |

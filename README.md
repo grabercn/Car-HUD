@@ -29,7 +29,7 @@ Voice-controlled, theme-aware, with live vehicle data, dashcam, and AI assistant
 - **HV Battery** -- Honda Accord Hybrid HV Battery Widget
 - **Radar** -- Radar Detector widget -- Cobra RAD 700i alerts and status
 - **Music** -- Music / Now Playing widget
-- **Trip** -- Trip Computer widget — full session stats for 2014 Honda Accord Hybrid
+- **Trip** -- Trip Computer widget — comprehensive session stats for 2014 Honda Accord Hybrid
 - **Connectivity** -- Connectivity widget -- WiFi + Bluetooth unified
 - **Dashcam** -- Dashcam status widget
 - **Weather** -- Weather widget -- current conditions via wttr.in (no API key needed)
