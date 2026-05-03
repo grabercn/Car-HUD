@@ -22,7 +22,7 @@ Each file (`w_*.py`) exports `name`, `priority`, `draw()`, and `is_active()`.
 
 | File | Name | Description | Priority | View Time | Show Every | Online? | Size | Modified |
 |------|------|-------------|----------|-----------|------------|---------|------|----------|
-| [`w_battery.py`](w_battery.py) | HV Battery | Honda Accord Hybrid HV Battery Widget | 3 | 15s | 0s | No | 18.2 KB | 2026-05-03 |
+| [`w_battery.py`](w_battery.py) | HV Battery | Honda Accord Hybrid HV Battery Widget | 3 | 15s | 0s | No | 31.1 KB | 2026-05-03 |
 | [`w_radar.py`](w_radar.py) | Radar | Radar Detector widget -- Cobra RAD 700i alerts and status | 5 | 15s | 0s | No | 4.4 KB | 2026-05-03 |
 | [`w_music.py`](w_music.py) | Music | Music / Now Playing widget | 10 | 12s | 0s | No | 5.1 KB | 2026-05-03 |
 | [`w_trip.py`](w_trip.py) | Trip | Trip Computer widget — full session stats for 2014 Honda Accord Hybrid | 10 | 12s | 0s | No | 11.4 KB | 2026-05-03 |
