@@ -121,13 +121,37 @@ class BatteryMonitor:
 
         data = obd.get("data", {})
         if not data:
-            return None
+            # OBD connected but no PIDs responding — car ignition likely off
+            self.current_data.update({
+                "connected": True,
+                "soc": 0,
+                "pack_voltage": 0,
+                "health_score": 0,
+                "power_kw": 0,
+                "ignition": False,
+            })
+            return self.current_data
 
         now = time.time()
 
         # Extract what we can from standard PIDs
-        soc = data.get("HYBRID_BATTERY_REMAINING", 0)
+        # HYBRID_BATTERY_REMAINING (PID 015B) needs ignition ON to read
+        soc = data.get("HYBRID_BATTERY_REMAINING", -1)
         voltage = data.get("CONTROL_MODULE_VOLTAGE", 0)  # 12V system
+
+        # If HV SOC not available, estimate from 12V system voltage
+        # 12V battery is charged by the HV system — its voltage correlates
+        if soc < 0 or soc == 0:
+            if voltage > 14.0:
+                soc = 80  # engine running, alternator charging
+            elif voltage > 13.0:
+                soc = 60
+            elif voltage > 12.5:
+                soc = 40
+            elif voltage > 12.0:
+                soc = 20
+            else:
+                soc = 5  # very low
         rpm = data.get("RPM", 0)
         speed = data.get("SPEED", 0) * 0.621371  # km/h to mph
         throttle = data.get("THROTTLE_POS", 0)
