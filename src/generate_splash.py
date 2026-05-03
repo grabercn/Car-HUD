@@ -21,8 +21,8 @@ for r in range(int(max_r), 0, -2):
 # -- Load and place Honda logo --
 logo = Image.open("/home/chrismslist/car-hud/honda_logo.png").convert("RGBA")
 
-# Resize logo to fit nicely on a small screen
-logo_h = 100
+# Resize logo — large and centered, filling the main display area
+logo_h = 160
 aspect = logo.width / logo.height
 logo_w = int(logo_h * aspect)
 logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
@@ -38,9 +38,9 @@ for i in range(30, 0, -1):
         fill=(160, 200, 240, alpha)
     )
 
-# Composite glow then logo
+# Composite glow then logo — vertically centered
 logo_x = (W - logo_w) // 2
-logo_y = H // 2 - logo_h // 2 - 30
+logo_y = H // 2 - logo_h // 2 - 15
 
 glow_x = logo_x - 30
 glow_y = logo_y - 30
@@ -67,34 +67,9 @@ for px in range(glow_x, glow_x + glow.width):
 # Paste the Honda logo
 img.paste(logo, (logo_x, logo_y), logo.split()[3])
 
-# -- Text: "ACCORD" in clean automotive style --
+# -- Thin elegant separator line below logo --
 draw = ImageDraw.Draw(img)
-
-# Use Liberation Sans which is clean and geometric like Honda's font
-try:
-    font_accord = ImageFont.truetype("/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf", 32)
-except Exception:
-    try:
-        font_accord = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", 32)
-    except Exception:
-        font_accord = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32)
-
-# "A C C O R D" with letter spacing for that premium OEM feel
-accord_text = "A C C O R D"
-accord_y = logo_y + logo_h + 15
-
-# Draw with subtle chrome-like color
-bbox = draw.textbbox((0, 0), accord_text, font=font_accord)
-tw = bbox[2] - bbox[0]
-tx = (W - tw) // 2
-
-# Subtle shadow
-draw.text((tx + 1, accord_y + 1), accord_text, fill=(20, 20, 25), font=font_accord)
-# Main text - silver/chrome color
-draw.text((tx, accord_y), accord_text, fill=(210, 215, 225), font=font_accord)
-
-# -- Thin elegant separator line --
-line_y = accord_y + 35
+line_y = logo_y + logo_h + 18
 line_w = 140
 line_x = (W - line_w) // 2
 # Gradient line effect

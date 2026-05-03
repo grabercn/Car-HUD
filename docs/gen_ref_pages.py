@@ -4,11 +4,16 @@ a reference page for each one with mkdocstrings directives.
 """
 
 import os
+import sys
 
 SRC_DIR = "src"
 API_DIR = "docs/api"
 WIDGET_DIR = os.path.join(SRC_DIR, "widgets")
 PAGES_DIR = os.path.join(SRC_DIR, "pages")
+
+if not os.path.isdir(SRC_DIR):
+    print(f"WARNING: {SRC_DIR}/ not found -- run from repo root. Skipping.")
+    sys.exit(0)
 
 os.makedirs(API_DIR, exist_ok=True)
 

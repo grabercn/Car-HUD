@@ -1,0 +1,64 @@
+name: Auto-Update Documentation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'services/**'
+      - 'docs/**'
+      - 'CONTRIBUTING.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # need previous commit to detect changes
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Detect changed folders
+        id: changes
+        run: |
+          # Track which areas changed
+          echo "src=$(git diff --name-only HEAD~1 HEAD -- 'src/*.py' | wc -l)" >> $GITHUB_OUTPUT
+          echo "widgets=$(git diff --name-only HEAD~1 HEAD -- 'src/widgets/*.py' | wc -l)" >> $GITHUB_OUTPUT
+          echo "pages=$(git diff --name-only HEAD~1 HEAD -- 'src/pages/*.py' | wc -l)" >> $GITHUB_OUTPUT
+          echo "services=$(git diff --name-only HEAD~1 HEAD -- 'services/*.service' | wc -l)" >> $GITHUB_OUTPUT
+          echo "docs=$(git diff --name-only HEAD~1 HEAD -- 'docs/**' | wc -l)" >> $GITHUB_OUTPUT
+
+          # List changed files for AI context
+          git diff --name-only HEAD~1 HEAD > /tmp/changed_files.txt
+          cat /tmp/changed_files.txt
+
+      - name: Generate sub-READMEs and main README
+        run: |
+          if [ -f .github/scripts/generate_readmes.py ]; then
+            python .github/scripts/generate_readmes.py
+          else
+            echo "generate_readmes.py not found -- skipping README generation"
+            exit 0
+          fi
+
+      - name: Commit updated docs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Only stage files that exist (services/README.md may not be present)
+          for f in README.md src/README.md src/widgets/README.md services/README.md; do
+            [ -f "$f" ] && git add "$f"
+          done
+          if git diff --cached --quiet; then
+            echo "No README changes needed"
+          else
+            git commit -m "docs: auto-update READMEs from code changes [skip ci]"
+            git push
+          fi

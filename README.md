@@ -1,32 +1,90 @@
 # Car-HUD
 
-A Raspberry Pi-powered heads-up display for the 2014 Honda Accord Hybrid. Voice-controlled, theme-aware, with live vehicle data, dashcam, and AI assistant.
+A Raspberry Pi-powered heads-up display for the 2014 Honda Accord Hybrid.
+Voice-controlled, theme-aware, with live vehicle data, dashcam, and AI assistant.
+
+![Last Commit](https://img.shields.io/github/last-commit/grabercn/Car-HUD)
+
+> Auto-generated on 2026-05-03 by
+> [`.github/scripts/generate_readmes.py`](.github/scripts/generate_readmes.py)
+
+---
+
+## Table of Contents
+
+- [Features](#features)
+- [Architecture](#architecture)
+- [Hardware Requirements](#hardware-requirements)
+- [Quick Start](#quick-start)
+- [Widgets](#widgets)
+- [Services](#services)
+- [Sub-READMEs](#sub-readmes)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+
+---
 
 ## Features
 
-- **Visual Dashboard** — Arc gauges for speed/RPM, colored bars for fuel, hybrid battery, coolant, engine load
-- **6 Color Themes** — Blue, Red, Green, Amber, Day, Night (auto day/night by clock)
-- **Voice Control** — "Hey Honda" wake word with Vosk STT + Gemini NLU
-- **OBD-II Integration** — Live vehicle data via Bluetooth (Vgate iCar Pro 2S)
-- **Dashcam** — Continuous recording with 5-min chunks, auto-rotate
-- **Dual Microphone** — USB lapel + webcam mic with SNR-weighted selection
-- **Auto-Gain** — Adaptive per-frame gain with reinforcement learning
-- **Music Display** — Bluetooth A2DP/AVRCP metadata from phone
-- **WiFi Manager** — Voice-controlled network switching with auto-connect
-- **OTA Updates** — Auto-checks GitHub on boot, full-screen update overlay
-- **Web Viewer** — Live MJPEG stream at `http://Car-HUD.local:8080` with keyboard shortcuts
-- **Boot Splash** — Animated Honda logo with self-calibrating progress bar
+- **HV Battery** -- Honda Accord Hybrid HV Battery Widget
+- **Radar** -- Radar Detector widget -- Cobra RAD 700i alerts and status
+- **Music** -- Music / Now Playing widget
+- **Trip** -- Trip Computer widget — full session stats for 2014 Honda Accord Hybrid
+- **Connectivity** -- Connectivity widget -- WiFi + Bluetooth unified
+- **Dashcam** -- Dashcam status widget
+- **Weather** -- Weather widget -- current conditions via wttr.in (no API key needed)
+- **Recent** -- Recently Played widget -- shows last few tracks from Spotify
+- **Map** -- Mini-Map widget -- GPS position, compass heading, and movement trail
+- **Camera** -- Camera widget -- live feed preview from connected cameras
+- **System** -- System Info widget -- uptime, disk usage, and version
 
-## Hardware
+---
+
+## Architecture
+
+```
+ Phone (BT)         Cobra RAD 700i (BLE)        Vgate iCar Pro (BLE)
+      |                       |                          |
+      v                       v                          v
+ music_service          cobra_service               obd_service
+ spotify_service             |                          |
+      |                      v                          v
+      |               /tmp/car-hud-cobra     /tmp/car-hud-obd-data
+      |                      |                          |
+      v                      v                          v
+ /tmp/car-hud-music   +-----------+   /tmp/car-hud-battery-data
+                      |           |          ^
+                      |  hud.py   |<---------+---- battery_monitor
+                      |  (pygame) |
+                      |           |-----> pages/  -----> widgets/
+                      +-----------+
+                           |
+               +-----------+-----------+
+               |           |           |
+               v           v           v
+          display     web_service   voice_service
+         (TFT LCD)   (MJPEG/HTTP)  (Vosk + Gemini)
+                                        |
+                                        v
+                                     brain.py
+                                   (NLU + TTS)
+```
+
+---
+
+## Hardware Requirements
 
 | Component | Model |
 |-----------|-------|
-| Compute | Raspberry Pi 3B+ (1GB RAM) |
-| Display | HY84832C035L-HDMI (3.5" TFT, 480x320, 1000 nits) |
-| OBD-II | Vgate iCar Pro 2S BT5.2 |
-| Camera | Logitech C925e (dashcam + secondary mic) |
-| Audio | AB13X USB Audio (lapel mic + speaker) |
-| Storage | 64GB SanDisk Ultra |
+| Compute | Raspberry Pi 3B+ (1 GB RAM) |
+| Display | 3.5" TFT 480x320 (1000 nits) |
+| OBD-II | Vgate iCar Pro 2S (BT 5.2 LE) |
+| Radar | Cobra RAD 700i (BLE + GPS) |
+| Camera | Logitech C925e (dashcam + mic) |
+| Audio | AB13X USB sound card (lapel mic + speaker) |
+| Storage | 64 GB SanDisk Ultra microSD |
+
+---
 
 ## Quick Start
 
@@ -35,84 +93,75 @@ A Raspberry Pi-powered heads-up display for the 2014 Honda Accord Hybrid. Voice-
 git clone https://github.com/grabercn/Car-HUD.git
 cd Car-HUD
 
-# Install
+# Install everything (services, deps, permissions)
 sudo bash scripts/install.sh
 
-# Reboot
+# Reboot to start all services
 sudo reboot
 ```
 
-## File Structure
+---
 
-```
-src/
-  hud.py              # Main HUD display (pygame, 480x320)
-  voice.py            # Voice system (dual mic, Vosk STT, wake word)
-  brain.py            # AI command processing (Gemini + local intent)
-  intent.py           # Local intent matcher (offline fallback)
-  wordlearn.py        # Word correction + audio reinforcement learning
-  denoise.py          # SpeexDSP noise suppression (ctypes wrapper)
-  obd_service.py      # OBD-II Bluetooth vehicle data monitor
-  music_service.py    # Bluetooth A2DP music metadata
-  wifi_service.py     # WiFi manager with auto-connect
-  dashcam_service.py  # Webcam recording in 5-min chunks
-  web_service.py # Web viewer (MJPEG stream + keyboard shortcuts)
-  splash_service.py       # Animated Honda boot splash
-  calibrate.py        # Voice calibration tool
-  generate_splash.py  # Static splash image generator
+## Widgets
 
-services/             # systemd service files
-scripts/
-  install.sh          # Full installation script
-  update.sh           # OTA update from GitHub
-```
+| Widget | Priority | View Time | Show Every | Online? |
+|--------|----------|-----------|------------|---------|
+| HV Battery | 3 | 15s | 0s | No |
+| Radar | 5 | 15s | 0s | No |
+| Music | 10 | 12s | 0s | No |
+| Trip | 10 | 12s | 0s | No |
+| Connectivity | 15 | 5s | 60s | No |
+| Dashcam | 15 | 6s | 0s | No |
+| Weather | 25 | 6s | 180s | Yes |
+| Recent | 30 | 10s | 0s | Yes |
+| Map | 40 | 8s | 0s | No |
+| Camera | 50 | 8s | 90s | No |
+| System | 99 | 4s | 120s | No |
 
-## Voice Commands
+> Lower priority = shown first. See [`src/widgets/README.md`](src/widgets/README.md) for full details.
 
-| Command | Action |
-|---------|--------|
-| "Hey Honda what's the weather" | AI response |
-| "Hey Honda color red/blue/green/amber" | Change theme |
-| "Hey Honda night mode / day mode" | Switch theme |
-| "Hey Honda show camera" | Live camera view |
-| "Hey Honda calibrate" | Run voice calibration |
-| "Hey Honda scan networks" | WiFi scan |
-| "Hey Honda connect to [network]" | WiFi connect |
-
-## Keyboard Shortcuts
-
-| Key | Action |
-|-----|--------|
-| C | Camera view |
-| H | Help overlay |
-| 1-6 | Themes (blue/red/green/amber/day/night) |
-| F1 | Voice calibration |
-| ? | Keyboard shortcuts |
-| ESC | Close overlay |
-| Ctrl+T | Terminal |
-| Ctrl+Q | Quit |
-
-## Web Viewer
-
-Access from any device on the same network:
-```
-http://Car-HUD.local:8080
-```
-Supports keyboard shortcuts from the browser.
+---
 
 ## Services
 
-| Service | Description |
-|---------|-------------|
-| car-hud-splash | Boot splash with progress bar |
-| car-hud | Main display |
-| car-hud-voice | Voice recognition + commands |
-| car-hud-obd | OBD-II vehicle data |
-| car-hud-wifi | WiFi management |
-| car-hud-dashcam | Dashcam recording |
-| car-hud-web | Screenshot server |
-| car-hud-updater | OTA update checker |
+| Unit File | Description |
+|-----------|-------------|
+| `car-hud-battery.service` | Car-HUD Honda Hybrid Battery Monitor |
+| `car-hud-cobra.service` | Car-HUD Cobra RAD 700i Radar Detector |
+| `car-hud-dashcam.service` | Honda Accord Dashcam |
+| `car-hud-display.service` | Car-HUD Display Brightness Controller |
+| `car-hud-music.service` | Car-HUD Bluetooth Music Service |
+| `car-hud-obd.service` | Honda Accord OBD-II Monitor |
+| `car-hud-splash.service` | Honda Accord Boot Splash |
+| `car-hud-touch.service` | Car-HUD Touch Input Service |
+| `car-hud-updater.service` | Car-HUD Auto Updater |
+| `car-hud-voice.service` | Honda Accord Voice Commands |
+| `car-hud-web.service` | Car-HUD Screenshot Server |
+| `car-hud-wifi.service` | Honda Accord WiFi Manager |
+| `car-hud.service` | Honda Accord HUD |
+| `hide-cursor.service` | Hide mouse cursor |
 
-## License
+> See [`services/README.md`](services/README.md) for full details.
 
-MIT
+---
+
+## Sub-READMEs
+
+| Path | Contents |
+|------|----------|
+| [`src/README.md`](src/README.md) | All source modules with docstring descriptions |
+| [`src/widgets/README.md`](src/widgets/README.md) | Widget files with priority, timing, and stats |
+| [`services/README.md`](services/README.md) | Systemd unit files with descriptions |
+
+---
+
+## Documentation
+
+Full project docs are published at **https://grabercn.github.io/Car-HUD/**
+
+---
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for guidelines on code style, testing,
+and pull-request workflow.

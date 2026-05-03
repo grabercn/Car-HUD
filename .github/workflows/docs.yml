@@ -28,10 +28,12 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install mkdocs-material "mkdocstrings[python]" mkdocs-gen-files mkdocs-literate-nav
+          pip install mkdocs-material "mkdocstrings[python]"
 
       - name: Auto-generate API reference pages
         run: python docs/gen_ref_pages.py
+        env:
+          PYTHONPATH: src
 
       - name: Build docs
         run: mkdocs build -d site
