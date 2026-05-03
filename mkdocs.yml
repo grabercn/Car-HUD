@@ -1,0 +1,82 @@
+site_name: Car-HUD Documentation
+site_description: Honda Accord Hybrid Head-Up Display — Raspberry Pi 3B+
+site_url: https://grabercn.github.io/Car-HUD/
+repo_url: https://github.com/grabercn/Car-HUD
+repo_name: grabercn/Car-HUD
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: blue
+      accent: cyan
+      toggle:
+        icon: material/brightness-7
+        name: Light mode
+    - scheme: default
+      primary: blue
+      accent: cyan
+      toggle:
+        icon: material/brightness-4
+        name: Dark mode
+  features:
+    - navigation.instant
+    - navigation.sections
+    - navigation.expand
+    - search.highlight
+    - content.code.copy
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_source: true
+            show_root_heading: true
+            members_order: source
+            docstring_style: google
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - toc:
+      permalink: true
+  - tables
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/install.md
+    - Hardware Setup: getting-started/hardware.md
+    - First Boot: getting-started/first-boot.md
+  - Architecture:
+    - Overview: architecture/overview.md
+    - Services: architecture/services.md
+    - Data Flow: architecture/data-flow.md
+  - Widgets:
+    - Widget System: widgets/system.md
+    - Creating Widgets: widgets/creating.md
+    - Built-in Widgets: widgets/builtin.md
+  - API Reference:
+    - config: api/config.md
+    - hud: api/hud.md
+    - obd_service: api/obd.md
+    - cobra_service: api/cobra.md
+    - battery_monitor: api/battery.md
+    - display_service: api/display.md
+    - web_service: api/web.md
+    - widgets: api/widgets.md
+  - Web Interface:
+    - Settings: web/settings.md
+    - Terminal: web/terminal.md
+    - REST API: web/api.md
+  - Voice Commands: voice.md
+  - Contributing: contributing.md
