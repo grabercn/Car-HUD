@@ -1,0 +1,14 @@
+[Unit]
+Description=Car-HUD Honda Hybrid Battery Monitor
+After=car-hud-obd.service
+Wants=car-hud-obd.service
+
+[Service]
+Type=simple
+User=chrismslist
+ExecStart=/usr/bin/python3 -u /home/chrismslist/car-hud/battery_monitor.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

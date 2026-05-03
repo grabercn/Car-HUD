@@ -1386,14 +1386,16 @@ class CarHUD:
                             self.clock_t.tick(30)
                             continue
                         elif vsig.get("action") == "widget":
-                            # Voice widget control: "show/hide <name> widget"
                             raw = vsig.get("raw", "").lower()
+                            target = vsig.get("target", "")
                             import widgets as _widgets
                             for wmod in _widgets.get_all():
                                 wn = wmod["name"].lower()
                                 if wn in raw:
-                                    enable = vsig.get("target") == "show"
-                                    _widgets.set_enabled(wn, enable)
+                                    if target in ("show", "hide"):
+                                        _widgets.set_enabled(wn, target == "show")
+                                    elif target in ("pin", "unpin"):
+                                        _widgets.set_pinned(wn, target == "pin")
                                     break
                         elif vsig.get("action") == "system" and vsig.get("target") == "calibrate":
                             subprocess.Popen(

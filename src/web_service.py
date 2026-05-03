@@ -346,6 +346,10 @@ class Handler(BaseHTTPRequestHandler):
             self.api_get_widgets()
         elif path == "/api/brightness":
             self.api_get_brightness()
+        elif path == "/api/battery":
+            self.api_get_battery()
+        elif path == "/api/battery/history":
+            self.api_battery_history()
         elif path == "/status":
             self.serve_status()
         else:
@@ -715,6 +719,19 @@ a{{color:#0af}}
         import urllib.parse
         params = urllib.parse.parse_qs(body)
 
+        if path == "/api/widget/pin":
+            wname = params.get("name", [""])[0]
+            pinned = params.get("pinned", ["true"])[0] == "true"
+            try:
+                import sys
+                sys.path.insert(0, "/home/chrismslist/car-hud")
+                import widgets
+                widgets.set_pinned(wname, pinned)
+                self._json_response({"success": True, "name": wname, "pinned": pinned})
+            except Exception as e:
+                self._json_response({"success": False, "error": str(e)})
+            return
+
         if path == "/api/terminal/write":
             cmd = params.get("cmd", [""])[0]
             _terminal_write(cmd)
@@ -935,6 +952,27 @@ inp.focus();
                 self._json_response(json.load(f))
         except:
             self._json_response({"theme": "blue", "auto": True})
+
+    def api_get_battery(self):
+        try:
+            with open("/tmp/car-hud-battery-data") as f:
+                self._json_response(json.load(f))
+        except Exception:
+            self._json_response({"connected": False})
+
+    def api_battery_history(self):
+        try:
+            import sqlite3
+            db = sqlite3.connect("/home/chrismslist/car-hud/battery_history.db")
+            hours = 24
+            cutoff = time.time() - hours * 3600
+            rows = db.execute(
+                "SELECT timestamp, soc, pack_voltage, power_kw FROM battery_log WHERE timestamp > ? ORDER BY timestamp",
+                (cutoff,)).fetchall()
+            db.close()
+            self._json_response([{"t": r[0], "soc": r[1], "v": r[2], "kw": r[3]} for r in rows])
+        except Exception:
+            self._json_response([])
 
     def api_get_brightness(self):
         try:

@@ -245,6 +245,21 @@ INTENTS = {
                      "disable music", "disable phone", "disable network",
                      "remove widget"],
     },
+    "widget_pin": {
+        "action": "widget", "target": "pin",
+        "keywords": {"pin": 3, "lock": 3, "stick": 2, "widget": 2, "keep": 2,
+                     "always": 2, "top": 2},
+        "phrases": ["pin widget", "pin battery", "pin music", "pin radar",
+                     "lock widget", "keep widget", "always show",
+                     "pin battery widget", "pin hv battery"],
+    },
+    "widget_unpin": {
+        "action": "widget", "target": "unpin",
+        "keywords": {"unpin": 3, "unlock": 3, "unstick": 2, "widget": 2,
+                     "release": 2, "free": 2},
+        "phrases": ["unpin widget", "unpin battery", "unpin music",
+                     "unlock widget", "release widget", "free widget"],
+    },
 }
 
 

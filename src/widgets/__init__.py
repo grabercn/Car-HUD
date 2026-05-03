@@ -25,6 +25,7 @@ _widgets = []
 _loaded = False
 _load_time = time.time()
 CONFIG_FILE = "/home/chrismslist/car-hud/.widget-config.json"
+PINNED_FILE = "/home/chrismslist/car-hud/.pinned-widgets.json"
 
 
 def _load_widgets():
@@ -125,7 +126,14 @@ def get_active(hud, music):
         if len(filtered) >= 2:
             active = filtered
 
-    active.sort(key=lambda x: x[0])
+    # Sort: pinned widgets first (priority -999), then by effective priority
+    pinned = get_pinned()
+    def sort_key(item):
+        eff, wname, mod = item
+        if wname.lower() in pinned:
+            return -999 + eff  # pinned always first
+        return eff
+    active.sort(key=sort_key)
     _active_cache = [(name, mod) for _, name, mod in active]
     _active_cache_time = now
     return _active_cache
@@ -149,3 +157,27 @@ def set_enabled(widget_name, enabled):
     config = _load_config()
     config[widget_name.lower()] = {"enabled": enabled}
     save_config(config)
+
+
+def get_pinned():
+    """Get list of pinned widget names."""
+    try:
+        with open(PINNED_FILE) as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
+def set_pinned(widget_name, pinned):
+    """Pin or unpin a widget. Pinned widgets always show first."""
+    pins = get_pinned()
+    wn = widget_name.lower()
+    if pinned and wn not in pins:
+        pins.append(wn)
+    elif not pinned and wn in pins:
+        pins.remove(wn)
+    try:
+        with open(PINNED_FILE, "w") as f:
+            json.dump(pins, f)
+    except Exception:
+        pass
